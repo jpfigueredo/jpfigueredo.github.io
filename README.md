@@ -38,11 +38,8 @@
         <img alt="wasabi-Linux" src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/linux/linux-original.svg" height="40" style="vertical-align:top; margin:4px"/>
         <img alt="wasabi-Hacking" src="https://img.icons8.com/ios/50/000000/hacker.png" height="40" style="vertical-align:top; margin:4px"/>
         <img alt="wasabi-VS-Code" src="https://raw.githubusercontent.com/github/explore/80688e429a7d4ef2fca1e82350fe8e3517d3494d/topics/visual-studio-code/visual-studio-code.png" height="40" style="vertical-align:top; margin:4px">
+        <img src="https://github.com/JPFigueredo/JPFigueredo/blob/output/github-contribution-grid-snake.svg"/> 
     </a>
 </div>
-
-
-<img src="https://github.com/JPFigueredo/JPFigueredo/blob/output/github-contribution-grid-snake.svg"/>
-
 
 
