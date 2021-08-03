@@ -20,7 +20,7 @@
 
 <div align="center">
   <img height="180em" src="https://github-readme-stats.vercel.app/api?username=JPFigueredo&count_private=true&show_icons=true&theme=chartreuse-dark"/>
-  <img height="180em" width="500em" src="https://github-readme-stats.vercel.app/api/top-langs/?username=JPFigueredo&layout=compact&langs_count=16&theme=chartreuse-dark"/>
+  <img height="180em" src="https://github-readme-stats.vercel.app/api/top-langs/?username=JPFigueredo&layout=compact&langs_count=16&theme=chartreuse-dark"/>
 </div>
 
 ## ⚒️ Languages and Tools:
