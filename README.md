@@ -6,15 +6,10 @@
 
 <h2 align="center">
     <div style="display inline-block">
-        <a href="mailto:jp.figueredo8@gmail.com">
-          <img align="center" height="30em" src="https://img.shields.io/badge/Gmail-D14836?style=for-the-badge&logo=gmail&logoColor=green"/>
-        </a>
-        <a href="https://www.linkedin.com/in/joao-figueredo/">
-          <img align="center" height="30em" src="https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=green"/>
-        </a>
-        <a href="https://github.com/JPFigueredo">
-          <img align="center" height="30em" src="https://komarev.com/ghpvc/?username=JPFigueredo&color=green" alt="JPFigueredo" />
-        </a>
+        <a href="https://stackoverflow.com/users/15944321/joao-figueredo"><img src="https://stackoverflow.com/users/flair/15944321.png?theme=dark" width="208" height="58" alt="profile for Joao_Figueredo at Stack Overflow, Q&amp;A for professional and enthusiast programmers" title="profile for Joao_Figueredo at Stack Overflow, Q&amp;A for professional and enthusiast programmers"></a>
+        <a href="mailto:jp.figueredo8@gmail.com"><img align="center" height="30em" src="https://img.shields.io/badge/Gmail-D14836?style=for-the-badge&logo=gmail&logoColor=green"/></a>
+        <a href="https://www.linkedin.com/in/joao-figueredo/"><img align="center" height="30em" src="https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=green"/></a>
+        <a href="https://github.com/JPFigueredo"><img align="center" height="30em" src="https://komarev.com/ghpvc/?username=JPFigueredo&color=green" alt="JPFigueredo" /></a>
   </div>
 </h2>
 
