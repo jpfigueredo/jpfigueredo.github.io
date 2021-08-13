@@ -1,9 +1,16 @@
 <h1> Hello! My name is João aka Wasabi </h1>
 
-- 🔭 I’m currently working with AP&C Investigation ;
-- 🌱 I’m currently learning VBA, Front-End and CyberSecurity ;
-- 👯 I’m looking to collaborate on CyberSecurity project ;
+<div align="center">
+    <div align ="left">
+        <p>💼 Working with AP&C Investigation;</p>
+        <p>🤓 Nerding VBA, Front-End and CyberSecurity;</p>
+        <p>💪 Grinding CyberSecurity;</p>
+    </div>
+    <img src ="https://64.media.tumblr.com/59d3d5c336e8106d9ebf7dd607207e7e/tumblr_mio9kdiQkO1rqrg67o1_500.gif" width="300" height="200" />
+</div>
+
 ## Contact 📞
+
 <h2 align="center">
     <div style="display inline-block">
         <a href="https://stackoverflow.com/users/15944321/joao-figueredo"><img src="https://stackoverflow.com/users/flair/15944321.png?theme=dark" width="208" height="58" alt="profile for Joao_Figueredo at Stack Overflow, Q&amp;A for professional and enthusiast programmers" title="profile for Joao_Figueredo at Stack Overflow, Q&amp;A for professional and enthusiast programmers"></a>
@@ -14,9 +21,10 @@
     </div>
 </h2>
 
+
 <div align="center">
-  <img height="170em" src="https://github-readme-stats.vercel.app/api?username=w4sabi&count_private=true&show_icons=true&theme=chartreuse-dark"/>
-  <img height="170em" width="400em" src="https://github-readme-stats.vercel.app/api/top-langs/?username=w4sabi&layout=compact&langs_count=16&theme=chartreuse-dark"/>
+    <img height="170em" src="https://github-readme-stats.vercel.app/api?username=w4sabi&count_private=true&show_icons=true&theme=chartreuse-dark"/>
+    <img height="170em" width="400em" src="https://github-readme-stats.vercel.app/api/top-langs/?username=w4sabi&layout=compact&langs_count=16&theme=chartreuse-dark"/>
 </div>
 
 ## ⚒️ Languages and Tools:
