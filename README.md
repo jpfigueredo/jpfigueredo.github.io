@@ -7,7 +7,7 @@
         <p>💪 Grinding CyberSecurity;</p>
         <p>👨‍🍳 Fun fact: I was a professional Cook</p>
     </div>
-    <img src ="https://64.media.tumblr.com/59d3d5c336e8106d9ebf7dd607207e7e/tumblr_mio9kdiQkO1rqrg67o1_500.gif" width="300" height="200" />
+    <img src ="https://media4.giphy.com/media/npnevRsQRUc5a/giphy.gif" width="300" height="200" />
 </div>
 
 ## Contact 📞
