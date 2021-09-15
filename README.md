@@ -3,9 +3,9 @@
 <div align="center">
     <div align ="left">
         <p>💼 Working with AP&C Investigation;</p>
-        <p>🤓 Nerding VBA, Front-End and CyberSecurity;</p>
+        <p>🤓 Nerding VBA and DevOps;</p>
         <p>💪 Grinding CyberSecurity;</p>
-        <p>👨‍🍳 Fun fact: I was a professional Cook</p>
+        <p>👨‍🍳 Fun fact: I'm a professional Cook</p>
     </div>
     <img src ="https://media4.giphy.com/media/npnevRsQRUc5a/giphy.gif"/>
 </div>
