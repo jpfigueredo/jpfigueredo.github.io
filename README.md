@@ -3,7 +3,7 @@
 <div align="center">
     <div align ="left">
         <p>💼 Working with AP&C Investigation;</p>
-        <p>🤓 Nerding VBA, DevOps and HackTheBox;</p>
+        <p>🤓 Nerding VBA and Back-End;</p>
         <p>💪 Grinding CyberSecurity;</p>
         <p>👨‍🍳 Fun fact: I'm a professional Cook</p>
     </div>
