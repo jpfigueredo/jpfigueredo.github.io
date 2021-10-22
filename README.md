@@ -34,16 +34,16 @@
 <div style="display: inline_block" align="center"><br>
         <a href="https://github.com/w4sabi">    
             <img alt="wasabi-Python" src="https://raw.githubusercontent.com/github/explore/80688e429a7d4ef2fca1e82350fe8e3517d3494d/topics/python/python.png" height="40" style="vertical-align:top; margin:4px"/>
-            <img alt="wasabi-Java" src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/java/java-original-wordmark.svg" height="40" style="vertical-align:top; margin:4px"/>
+            <img alt="wasabi-Hacking" src="https://img.icons8.com/ios/50/000000/hacker.png" height="40" style="vertical-align:top; margin:4px"/>
+            <img alt="wasabi-Git" src="https://raw.githubusercontent.com/devicons/devicon/master/icons/git/git-original.svg" height="40" style="vertical-align:top; margin:4px"/>
             <img alt="wasabi-Kotlin" src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/kotlin/kotlin-original.svg" height="40" style="vertical-align:top; margin:4px"/>
+            <img alt="wasabi-Android" src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/android/android-original.svg" height="40" style="vertical-align:top; margin:4px"/>
+            <img alt="wasabi-MySQL" src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/mysql/mysql-original.svg" height="40" style="vertical-align:top; margin:4px"/>
+            <img alt="wasabi-Java" src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/java/java-original-wordmark.svg" height="40" style="vertical-align:top; margin:4px"/>
             <img alt="wasabi-Javascript" src="https://raw.githubusercontent.com/github/explore/80688e429a7d4ef2fca1e82350fe8e3517d3494d/topics/javascript/javascript.png" height="40" style="vertical-align:top; margin:4px"/>
             <img alt="wasabi-HTML" src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/html5/html5-original.svg" height="40" style="vertical-align:top; margin:4px"/>
             <img alt="wasabi-CSS" src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/css3/css3-original.svg" height="40" style="vertical-align:top; margin:4px"/>
-            <img alt="wasabi-MySQL" src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/mysql/mysql-original.svg" height="40" style="vertical-align:top; margin:4px"/>
-            <img alt="wasabi-Git" src="https://raw.githubusercontent.com/devicons/devicon/master/icons/git/git-original.svg" height="40" style="vertical-align:top; margin:4px"/>
-            <img alt="wasabi-Android" src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/android/android-original.svg" height="40" style="vertical-align:top; margin:4px"/>
             <img alt="wasabi-Linux" src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/linux/linux-original.svg" height="40" style="vertical-align:top; margin:4px"/>
-            <img alt="wasabi-Hacking" src="https://img.icons8.com/ios/50/000000/hacker.png" height="40" style="vertical-align:top; margin:4px"/>
             <img alt="wasabi-VS-Code" src="https://raw.githubusercontent.com/github/explore/80688e429a7d4ef2fca1e82350fe8e3517d3494d/topics/visual-studio-code/visual-studio-code.png" height="40" style="vertical-align:top; margin:4px">
         <img src="https://github.com/w4sabi/w4sabi/blob/output/github-contribution-grid-snake.svg"/> 
         <a href="https://github.com/w4sabi"><img align="center" height="30em" src="https://profile-counter.glitch.me/w4sabi/count.svg" alt="w4sabi" /></a>
