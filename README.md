@@ -4,7 +4,7 @@
     <div align ="left">
         <p>
             💼 Working with AP&C Investigation;<br>
-            🤓 Nerding VBA and Back-End;<br>
+            🤓 Nerding Java and Back-End;<br>
             💪 Grinding CyberSecurity;<br>
             👨‍🍳 Fun fact: I'm a professional Cook
         </p>
