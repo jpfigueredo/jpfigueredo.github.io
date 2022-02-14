@@ -3,7 +3,7 @@
 <div align="center">
     <div align ="left">
         <p>
-            💼 Working with AP&C Investigation;<br>
+            💼 Working with Automation;<br>
             🤓 Nerding Java and Back-End;<br>
             💪 Grinding CyberSecurity;<br>
             👨‍🍳 Fun fact: I'm a professional Cook
