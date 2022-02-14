@@ -4,8 +4,8 @@
     <div align ="left">
         <p>
             💼 Working with Automation;<br>
-            🤓 Nerding Java and Back-End;<br>
-            💪 Grinding CyberSecurity;<br>
+            🤓 Nerding Backend;<br>
+            💪 Grinding Spring framework;<br>
             👨‍🍳 Fun fact: I'm a professional Cook
         </p>
     </div>
