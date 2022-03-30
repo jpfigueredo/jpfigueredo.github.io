@@ -3,9 +3,9 @@
 <div align="center">
     <div align ="left">
         <p>
-            💼 Working with Automation;<br>
+            💼 Java Developer at NTT Data;<br>
             🤓 Nerding Backend;<br>
-            💪 Grinding Spring framework;<br>
+            💪 Grinding Spring Framework;<br>
             👨‍🍳 Fun fact: I'm a professional Cook
         </p>
     </div>
