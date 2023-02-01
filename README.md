@@ -3,7 +3,7 @@
 <div align="center">
     <div align ="left">
         <p>
-            💼 Java Developer at NTT Data;<br>
+            💼 Solutions Developer at NTT Data;<br>
             🤓 Nerding Backend;<br>
             💪 Grinding Spring Framework;<br>
             👨‍🍳 Fun fact: I'm a professional Cook
