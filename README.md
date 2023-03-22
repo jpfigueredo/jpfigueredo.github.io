@@ -5,7 +5,7 @@
         <p>
             💼 Solutions Developer at NTT Data;<br>
             🤓 Nerding Backend;<br>
-            💪 Grinding Spring Framework;<br>
+            💪 Grinding DevSecOps;<br>
             👨‍🍳 Fun fact: I'm a professional Cook
         </p>
     </div>
