@@ -1,11 +1,13 @@
 <h1> Hello! My name is João aka Loid </h1>
 
+<h2>My motto is Do the right thing, and do the thing right.</h2>
+
 <div align="center">
     <div align ="left">
         <p>
             💼 Software Developer at Bradesco Seguros;<br>
-            🤓 Nerding IT;<br>
-            💪 Grinding Backend;<br>
+            🤓 Nerding CS2;<br>
+            💪 Grinding IT;<br>
             👨‍🍳 Fun fact: I'm a professional Cook
         </p>
     </div>
