@@ -1,6 +1,6 @@
 <h1> Hello! My name is João aka Loid </h1>
 
-<h3>My motto is Do the right thing, and do the thing right.</h3>
+<h3>Do the right thing, and do the thing right.</h3>
 
 <div align="center">
     <div align ="left">
