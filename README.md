@@ -1,6 +1,6 @@
 <h1> Hello! My name is João aka Loid </h1>
 
-<h2>My motto is Do the right thing, and do the thing right.</h2>
+<h3>My motto is Do the right thing, and do the thing right.</h3>
 
 <div align="center">
     <div align ="left">
@@ -31,7 +31,7 @@
             <img alt="spyLoid-HTML" src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/html5/html5-original.svg" height="40" style="vertical-align:top; margin:8px"/>
             <img alt="spyLoid-CSS" src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/css3/css3-original.svg" height="40" style="vertical-align:top; margin:8px"/>
             <img alt="spyLoid-Linux" src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/linux/linux-original.svg" height="40" style="vertical-align:top; margin:8px"/>
-            <img alt="spyLoid-VSCode" src="https://raw.githubusercontent.com/github/explore/80688e429a7d4ef2fca1e82350fe8e3517d3494d/topics/visual-studio-code/visual-studio-code.png" height="40" style="vertical-align:top; margin:8px">
+            <img alt="spyLoid-VSCode" src="https://raw.githubusercontent.com/github/explore/80688e429a7d4ef2fca1e82350fe8e3517d3494d/topics/visual-studio-code/visual-studio-code.png" height="40" style="vertical-align:top; margin:8px"/>
         </div>
         <div align="center">
             <img height="170em" src="https://github-readme-stats.vercel.app/api?username=spyLoid&count_private=true&show_icons=true&theme=chartreuse-dark"/>
