@@ -7,7 +7,7 @@
         <p>
             💼 Software Developer at Bradesco Seguros;<br>
             🤓 Nerding CS2;<br>
-            💪 Grinding IT;<br>
+            💪 Grinding Backend Software Engineering;<br>
             👨‍🍳 Fun fact: I'm a professional Cook
         </p>
     </div>
