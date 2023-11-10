@@ -50,6 +50,6 @@
   </div>
     <div align="center">
         <a href="mailto:jp.figueredo8@gmail.com"><img align="center" height="30em" src="https://img.shields.io/badge/Gmail-D14836?style=for-the-badge&logo=gmail&logoColor=green"/></a>
-        <a href="https://www.linkedin.com/in/joao-figueredo/"><img align="center" height="30em" src="https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=green"/></a>
+        <a href="https://www.linkedin.com/in/jpfigueredo/"><img align="center" height="30em" src="https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=green"/></a>
     </div>
 </h2>
