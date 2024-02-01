@@ -1,4 +1,4 @@
-<h1> Hello! My name is João aka Loid </h1>
+<h1> Hello! My name is João </h1>
 
 <h3>Do the right thing, and do the thing right.</h3>
 
