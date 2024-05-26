@@ -6,8 +6,9 @@
     <div align ="left">
         <p>
             💼 Software Developer at Bradesco Seguros;<br>
-            🤓 Nerding CS2 and PoE;<br>
-            💪 Grinding Backend Software Engineering;<br>
+            🤓 Nerding CS2 and LOL;<br>
+            ⏳ Paitiently waiting PoE 2;<br>
+            💪 Grinding DSA;<br>
             👨‍🍳 Fun fact: I'm a professional Cook
         </p>
     </div>
