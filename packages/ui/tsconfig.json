@@ -1,11 +1,11 @@
 {
-  "extends": "@jpfig/config/tsconfig",
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
     "declaration": true,
     "emitDeclarationOnly": false,
     "jsx": "react-jsx",
-    "types": ["react", "react-dom"]
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
   },
   "include": ["src"]
 }

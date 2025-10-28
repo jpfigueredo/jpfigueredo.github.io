@@ -16,17 +16,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'pnpm'
+          cache: 'yarn'
       - name: Install deps
-        run: pnpm install --frozen-lockfile=false
+        run: yarn install --frozen-lockfile
       - name: Build
-        run: pnpm run build
+        run: yarn build
       - name: Compose Pages artifact
         run: |
           mkdir -p .pages
