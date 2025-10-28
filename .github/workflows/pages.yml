@@ -36,6 +36,8 @@ jobs:
           mkdir -p .pages/apps
           # Publish subapps static outputs
           cp -r apps/* .pages/apps/
+          # Add SPA routing support (404.html = index.html for client-side routing)
+          cp .pages/index.html .pages/404.html
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
