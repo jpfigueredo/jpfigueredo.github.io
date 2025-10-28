@@ -57,8 +57,10 @@
 
 ---
 
-## Monorepo (pnpm + turbo)
-- Dev: `pnpm -w dev`
-- Build: `pnpm -w build`
+## Monorepo (yarn + turbo)
+- Dev: `yarn dev`
+- Build: `yarn build`
 
 Frontend em `web/` (Vite + React). Subapps publicados sob `/apps/*`. Proxy/backend em `services/`.
+
+**Status:** ✅ Portfolio redesenhado com UI moderna e responsiva
