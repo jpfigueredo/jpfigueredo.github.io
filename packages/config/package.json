@@ -1,0 +1,10 @@
+{
+  "name": "@jpfig/config",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    "./eslint": "./eslint.cjs",
+    "./prettier": "./prettier.cjs",
+    "./tsconfig": "./tsconfig.json"
+  }
+}

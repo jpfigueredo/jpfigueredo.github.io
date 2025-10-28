@@ -54,3 +54,11 @@
         <a href="https://www.linkedin.com/in/jpfigueredo/"><img align="center" height="30em" src="https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=green"/></a>
     </div>
 </h2>
+
+---
+
+## Monorepo (pnpm + turbo)
+- Dev: `pnpm -w dev`
+- Build: `pnpm -w build`
+
+Frontend em `web/` (Vite + React). Subapps publicados sob `/apps/*`. Proxy/backend em `services/`.

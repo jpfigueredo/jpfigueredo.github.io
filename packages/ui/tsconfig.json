@@ -1,0 +1,9 @@
+{
+  "extends": "@jpfig/config/tsconfig",
+  "compilerOptions": {
+    "outDir": "dist",
+    "declaration": true,
+    "emitDeclarationOnly": false
+  },
+  "include": ["src"]
+}

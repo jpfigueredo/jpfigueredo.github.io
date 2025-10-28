@@ -1,0 +1,10 @@
+{
+  "extends": "@jpfig/config/tsconfig",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@jpfig/ui": ["../packages/ui/src"]
+    }
+  },
+  "include": ["src", "vite-env.d.ts"]
+}
