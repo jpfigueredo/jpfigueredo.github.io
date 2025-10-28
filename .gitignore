@@ -6,3 +6,5 @@ dist/
 .vite/
 .vercel/
 .netlify/
+.turbo/
+.pages/

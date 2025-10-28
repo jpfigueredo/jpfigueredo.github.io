@@ -12,7 +12,7 @@ const SidebarMenu: React.FC = () => (
   <aside className="p-4 border-r border-slate-700 min-w-[220px]">
     <nav className="flex flex-col gap-2">
       <a className="text-neon hover:underline" href="/">Início</a>
-      <a className="hover:underline" href="/projects/doom64">DOOM64 (WASM)</a>
+      <a className="hover:underline" href="/projects/goom64">GOOM64 (Go + WASM)</a>
       <a className="hover:underline" href="/projects/sw-timeline">SW Timeline</a>
       <a className="hover:underline" href="/docs">Docs</a>
     </nav>
@@ -31,13 +31,13 @@ const Home = () => (
   </PageContainer>
 );
 
-const Doom64 = () => (
+const Goom64 = () => (
   <PageContainer>
     <div className="flex">
       <SidebarMenu />
       <div className="p-6 w-full">
-        <h2><NeonText>DOOM64 (WASM)</NeonText></h2>
-        <IframeViewport src="/apps/doom64-wasm/index.html" title="doom64" />
+        <h2><NeonText>GOOM64 (Go + WASM)</NeonText></h2>
+        <IframeViewport src="https://jpfigueredo.github.io/jpfigueredo.github-portfolio-projects/goom64/index.html" title="goom64" />
       </div>
     </div>
   </PageContainer>
@@ -69,7 +69,7 @@ const Docs = () => (
 
 const router = createBrowserRouter([
   { path: '/', element: <Home /> },
-  { path: '/projects/doom64', element: <Doom64 /> },
+  { path: '/projects/goom64', element: <Goom64 /> },
   { path: '/projects/sw-timeline', element: <SwTimeline /> },
   { path: '/docs', element: <Docs /> }
 ]);
