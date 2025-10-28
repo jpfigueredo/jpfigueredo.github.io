@@ -17,7 +17,7 @@ jobs:
         with:
           node-version: 20
       - name: Install wrangler
-        run: npm i -g wrangler@3
+        run: npm i -g wrangler@4
       - name: Publish worker
         working-directory: services/edge-proxy
         env:
@@ -25,4 +25,4 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           BFF_HOST: ${{ vars.BFF_HOST }}
         run: |
-          wrangler deploy --var BFF_HOST:${BFF_HOST}
+          npx wrangler deploy --var BFF_HOST:${BFF_HOST}
