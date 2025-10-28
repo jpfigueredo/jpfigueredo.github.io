@@ -1,11 +1,10 @@
 {
-  "extends": "@jpfig/config/tsconfig",
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "baseUrl": ".",
     "jsx": "react-jsx",
     "esModuleInterop": true,
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "types": ["react", "react-dom"],
     "paths": {
       "@jpfig/ui": ["../packages/ui/src"]
     }

@@ -5,6 +5,7 @@
   "exports": {
     "./eslint": "./eslint.cjs",
     "./prettier": "./prettier.cjs",
-    "./tsconfig": "./tsconfig.json"
+    "./tsconfig": "./tsconfig.json",
+    "./tsconfig/react-library": "./tsconfig/react-library.json"
   }
 }
