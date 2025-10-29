@@ -246,21 +246,40 @@ const Footer: React.FC = () => (
 );
 
 // Enhanced Homepage Component
-const Home = () => (
-  <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 relative">
-    <Starfield density={280} />
-    {/* Hero Section */}
-    <section className="relative z-10 overflow-hidden">
-      {/* Minimal Hubble overlay (very faint) */}
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.06] mix-blend-screen bg-center bg-cover"
-        style={{
-          backgroundImage:
-            "url('https://upload.wikimedia.org/wikipedia/commons/3/3f/2014_Hubble_Ultra_Deep_Field_%28full_resolution%29.png')",
-        }}
-        aria-hidden="true"
-      />
-      <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-12 sm:py-16 md:py-20">
+const Home = () => {
+  const [showHubbleOverlay, setShowHubbleOverlay] = useState(true);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 relative">
+      <Starfield density={280} showConstellations={true} />
+      {/* Hero Section */}
+      <section className="relative z-10 overflow-hidden">
+        {/* Hubble overlay with high contrast - can be toggled */}
+        {showHubbleOverlay && (
+          <div
+            className="pointer-events-none absolute inset-0 opacity-[0.12] mix-blend-screen bg-center bg-cover transition-opacity duration-500"
+            style={{
+              backgroundImage:
+                "url('https://upload.wikimedia.org/wikipedia/commons/3/3f/2014_Hubble_Ultra_Deep_Field_%28full_resolution%29.png')",
+              filter: 'contrast(1.8) brightness(0.4) saturate(0.6)',
+            }}
+            aria-hidden="true"
+          />
+        )}
+        
+        {/* Toggle button for Hubble overlay */}
+        <div className="absolute top-4 right-4 z-20">
+          <button
+            onClick={() => setShowHubbleOverlay(!showHubbleOverlay)}
+            className="px-3 py-2 bg-slate-800/80 backdrop-blur-sm border border-slate-700 rounded-lg text-slate-400 hover:text-neon hover:border-neon/50 transition-all text-xs sm:text-sm flex items-center gap-2"
+            title={showHubbleOverlay ? 'Ocultar galáxias' : 'Mostrar galáxias'}
+          >
+            <span>{showHubbleOverlay ? '🌌' : '🌌'}</span>
+            <span className="hidden sm:inline">{showHubbleOverlay ? 'Ocultar' : 'Mostrar'}</span>
+          </button>
+        </div>
+        
+        <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-12 sm:py-16 md:py-20">
         <div className="text-center mb-12 sm:mb-16">
           <div className="inline-flex flex-col sm:flex-row items-center gap-3 sm:gap-4 mb-6">
             <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-neon to-magenta rounded-full flex items-center justify-center flex-shrink-0">
@@ -370,7 +389,8 @@ const Home = () => (
       </div>
     </section>
   </div>
-);
+  );
+};
 
 // Main Layout Component
 const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
