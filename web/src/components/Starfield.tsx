@@ -49,13 +49,12 @@ export const Starfield: React.FC<{ density?: number; className?: string }>= ({ d
     resize();
     window.addEventListener('resize', resize);
 
-    const draw = () => {
+    const draw = (t: number) => {
       const w = window.innerWidth;
       const h = window.innerHeight;
       ctx.clearRect(0, 0, w, h);
 
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
-      ctx.strokeStyle = 'rgba(0,240,255,0.25)';
+      ctx.strokeStyle = 'rgba(0,240,255,0.18)';
 
       for (const star of starsRef.current) {
         star.z -= star.speed;
@@ -74,23 +73,52 @@ export const Starfield: React.FC<{ density?: number; className?: string }>= ({ d
 
         star.pz = star.z;
 
-        // draw star point
-        const r = Math.max(0.5, star.size * (1.5 - star.z / Math.max(w, h)));
+        // brightness and size scale
+        const depth = 1 - star.z / Math.max(w, h);
+        const r = Math.max(0.4, star.size * (1.2 + depth));
+
+        // twinkle factor (subtle)
+        const twinkle = 0.75 + 0.25 * Math.sin((t * 0.003) + (star.x + star.y) * 0.001);
+
+        // radial glow
+        const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 4);
+        grad.addColorStop(0, `rgba(255,255,255,${0.75 * twinkle})`);
+        grad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = grad as CanvasGradient;
+        ctx.beginPath();
+        ctx.arc(sx, sy, r * 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // core
+        ctx.fillStyle = `rgba(255,255,255,${0.9 * twinkle})`;
         ctx.beginPath();
         ctx.arc(sx, sy, r, 0, Math.PI * 2);
         ctx.fill();
 
-        // draw subtle trail
+        // subtle trail
         ctx.beginPath();
         ctx.moveTo(px, py);
         ctx.lineTo(sx, sy);
         ctx.stroke();
+
+        // star flare (cross)
+        ctx.save();
+        ctx.globalAlpha = 0.35 * twinkle;
+        ctx.translate(sx, sy);
+        const flare = r * 4;
+        ctx.beginPath();
+        ctx.moveTo(-flare, 0);
+        ctx.lineTo(flare, 0);
+        ctx.moveTo(0, -flare);
+        ctx.lineTo(0, flare);
+        ctx.stroke();
+        ctx.restore();
       }
 
       rafRef.current = requestAnimationFrame(draw);
     };
 
-    rafRef.current = requestAnimationFrame(draw);
+    rafRef.current = requestAnimationFrame((ts) => draw(ts));
 
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);

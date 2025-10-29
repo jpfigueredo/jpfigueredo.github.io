@@ -251,6 +251,15 @@ const Home = () => (
     <Starfield density={280} />
     {/* Hero Section */}
     <section className="relative z-10 overflow-hidden">
+      {/* Minimal Hubble overlay (very faint) */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.06] mix-blend-screen bg-center bg-cover"
+        style={{
+          backgroundImage:
+            "url('https://upload.wikimedia.org/wikipedia/commons/3/3f/2014_Hubble_Ultra_Deep_Field_%28full_resolution%29.png')",
+        }}
+        aria-hidden="true"
+      />
       <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-12 sm:py-16 md:py-20">
         <div className="text-center mb-12 sm:mb-16">
           <div className="inline-flex flex-col sm:flex-row items-center gap-3 sm:gap-4 mb-6">
