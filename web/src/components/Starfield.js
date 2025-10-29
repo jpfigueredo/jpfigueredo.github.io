@@ -11,10 +11,18 @@ function createStar(width, height) {
         size: 0.5 + Math.random() * 1.5,
     };
 }
-export const Starfield = ({ density = 250, className }) => {
+export const Starfield = ({ density = 250, className, showConstellations = true }) => {
     const canvasRef = useRef(null);
     const starsRef = useRef([]);
     const rafRef = useRef(null);
+    // Helper to calculate screen position
+    const getScreenPos = (star, w, h) => {
+        return {
+            x: (star.x / star.z) * w + w / 2,
+            y: (star.y / star.z) * h + h / 2,
+            depth: star.z
+        };
+    };
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas)
@@ -39,6 +47,39 @@ export const Starfield = ({ density = 250, className }) => {
             const w = window.innerWidth;
             const h = window.innerHeight;
             ctx.clearRect(0, 0, w, h);
+            ctx.strokeStyle = 'rgba(0,240,255,0.18)';
+            // Draw constellations first (behind stars)
+            if (showConstellations) {
+                ctx.strokeStyle = 'rgba(0,240,255,0.08)';
+                ctx.lineWidth = 0.5;
+                const screenStars = starsRef.current
+                    .map(star => ({
+                    ...getScreenPos(star, w, h),
+                    star
+                }))
+                    .filter(pos => pos.x >= 0 && pos.x <= w && pos.y >= 0 && pos.y <= h);
+                // Connect nearby stars (constellation effect)
+                const maxDist = Math.min(w, h) * 0.15; // 15% of screen
+                for (let i = 0; i < screenStars.length; i++) {
+                    for (let j = i + 1; j < screenStars.length; j++) {
+                        const dx = screenStars[i].x - screenStars[j].x;
+                        const dy = screenStars[i].y - screenStars[j].y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        // Only connect if stars are close and at similar depth
+                        const depthDiff = Math.abs(screenStars[i].depth - screenStars[j].depth);
+                        if (dist < maxDist && depthDiff < Math.max(w, h) * 0.3) {
+                            const alpha = 0.08 * (1 - dist / maxDist) * (1 - depthDiff / (Math.max(w, h) * 0.3));
+                            ctx.globalAlpha = alpha;
+                            ctx.beginPath();
+                            ctx.moveTo(screenStars[i].x, screenStars[i].y);
+                            ctx.lineTo(screenStars[j].x, screenStars[j].y);
+                            ctx.stroke();
+                        }
+                    }
+                }
+                ctx.globalAlpha = 1;
+            }
+            // Draw stars with trails
             ctx.strokeStyle = 'rgba(0,240,255,0.18)';
             for (const star of starsRef.current) {
                 star.z -= star.speed;
@@ -97,7 +138,7 @@ export const Starfield = ({ density = 250, className }) => {
                 cancelAnimationFrame(rafRef.current);
             window.removeEventListener('resize', resize);
         };
-    }, [density]);
+    }, [density, showConstellations]);
     return (_jsx("canvas", { ref: canvasRef, className: `pointer-events-none fixed inset-0 z-0 opacity-70 ${className ?? ''}`, style: {
             position: 'fixed',
             top: 0,
