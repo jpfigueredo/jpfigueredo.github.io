@@ -17,7 +17,11 @@ export const Starfield = ({ density = 250, className }) => {
     const rafRef = useRef(null);
     useEffect(() => {
         const canvas = canvasRef.current;
+        if (!canvas)
+            return;
         const ctx = canvas.getContext('2d', { alpha: true });
+        if (!ctx)
+            return;
         const resize = () => {
             const dpr = window.devicePixelRatio || 1;
             canvas.width = Math.floor(window.innerWidth * dpr);
@@ -70,5 +74,12 @@ export const Starfield = ({ density = 250, className }) => {
             window.removeEventListener('resize', resize);
         };
     }, [density]);
-    return (_jsx("canvas", { ref: canvasRef, className: `pointer-events-none fixed inset-0 -z-10 opacity-60 ${className ?? ''}`, "aria-hidden": "true" }));
+    return (_jsx("canvas", { ref: canvasRef, className: `pointer-events-none fixed inset-0 z-0 opacity-70 ${className ?? ''}`, style: {
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            zIndex: 0
+        }, "aria-hidden": "true" }));
 };

@@ -27,8 +27,11 @@ export const Starfield: React.FC<{ density?: number; className?: string }>= ({ d
   const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current!;
-    const ctx = canvas.getContext('2d', { alpha: true })!;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d', { alpha: true });
+    if (!ctx) return;
 
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
@@ -98,9 +101,15 @@ export const Starfield: React.FC<{ density?: number; className?: string }>= ({ d
   return (
     <canvas
       ref={canvasRef}
-      className={
-        `pointer-events-none fixed inset-0 -z-10 opacity-60 ${className ?? ''}`
-      }
+      className={`pointer-events-none fixed inset-0 z-0 opacity-70 ${className ?? ''}`}
+      style={{ 
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
+        zIndex: 0
+      }}
       aria-hidden="true"
     />
   );
