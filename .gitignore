@@ -14,3 +14,9 @@ yarn-error.log
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Ignore TypeScript compiled output in source directories (Vite handles build)
+web/src/**/*.js
+web/src/**/*.js.map
+packages/*/src/**/*.js
+packages/*/src/**/*.js.map

@@ -83,6 +83,23 @@ async function readDatasets() {
   return datasets;
 }
 
+async function readRules() {
+  const files = await glob(path.join(repoRoot, 'web/src/data/**/link-rules.json'));
+  const all = [];
+  for (const fp of files) {
+    try {
+      const raw = await readFile(fp, 'utf8');
+      const json = JSON.parse(raw);
+      if (Array.isArray(json?.rules)) {
+        all.push(...json.rules);
+      }
+    } catch {}
+  }
+  const byId = new Map();
+  for (const r of all) byId.set(r.id, r);
+  return byId;
+}
+
 function markdownEscape(s) {
   return s.replaceAll('|', '\\|');
 }
@@ -90,12 +107,22 @@ function markdownEscape(s) {
 async function main() {
   const ci = process.argv.includes('--ci');
   const datasets = await readDatasets();
+  const rulesById = await readRules();
   const rows = [];
   let broken = 0;
+  let suggestions = 0;
   for (const ds of datasets) {
     const nodes = Array.isArray(ds.data?.nodes) ? ds.data.nodes : [];
     for (const n of nodes) {
       const sources = Array.isArray(n?.sources) ? n.sources : [];
+      const rule = rulesById.get(n.id);
+      const preferredList = Array.isArray(rule?.preferred) ? rule.preferred : [];
+      // Check if a preferred canonical is present
+      const hasPreferred = preferredList.some(p => sources.includes(p));
+      if (rule && preferredList.length && !hasPreferred) {
+        suggestions++;
+        rows.push({ file: ds.file, id: n.id, label: n.label, url: '[suggest:add-canonical]', host: 'canonical', status: 'suggest', ok: true, primaryScore: 3, contentType: rule.notes || '', avoided: false });
+      }
       for (const src of sources) {
         const meta = classify(src);
         const res = await checkUrl(src);
@@ -123,9 +150,11 @@ async function main() {
   }
   md.push('');
   md.push('Heuristics: prefer academic/primary domains (e.g., arXiv, DOI, ACM, IEEE, .edu, .gov); flag corporate/social/marketing paths.');
+  md.push('');
+  md.push('Canonical rules are read from `web/src/data/**/link-rules.json` and surfaced as suggestions when missing.');
   await writeFile(path.join(outDir, 'links.md'), md.join('\n'), 'utf8');
 
-  if (ci && broken > 0) {
+  if (ci && (broken > 0)) {
     console.error(`Found ${broken} broken source link(s). See reports/links.md`);
     process.exit(1);
   }
