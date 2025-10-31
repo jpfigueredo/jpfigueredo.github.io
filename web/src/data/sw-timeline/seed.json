@@ -1,0 +1,18 @@
+{
+  "nodes": [
+    {"id": "frege-1879", "type": "person", "label": "G. Frege", "date": "1879-01-01", "sources": ["https://plato.stanford.edu/entries/frege/"], "tags": ["logic"]},
+    {"id": "russell-1903", "type": "person", "label": "B. Russell", "date": "1903-01-01", "sources": ["https://plato.stanford.edu/entries/russell/"], "tags": ["logic"]},
+    {"id": "turing-1936", "type": "work", "label": "A. M. Turing – 1936", "date": "1936-01-01", "sources": ["https://doi.org/10.1112/plms/s2-42.1.230"], "tags": ["computation", "turing"]},
+    {"id": "church-1936", "type": "work", "label": "A. Church – 1936", "date": "1936-01-01", "sources": ["https://doi.org/10.2307/2269326"], "tags": ["lambda-calculus"]},
+    {"id": "von-neumann-1945", "type": "work", "label": "Von Neumann – EDVAC report", "date": "1945-06-30", "sources": ["https://library.ias.edu/ideas/edvac"], "tags": ["architecture"]},
+    {"id": "simula-1967", "type": "technology", "label": "Simula (OOP)", "date": "1967-01-01", "sources": ["https://doi.org/10.1145/321239.321240"], "tags": ["oop"]},
+    {"id": "dartmouth-1956", "type": "event", "label": "Dartmouth AI Workshop", "date": "1956-06-18", "sources": ["https://www.aaai.org/"], "tags": ["ai", "symbolic"]}
+  ],
+  "edges": [
+    {"from": "frege-1879", "to": "turing-1936", "relation": "influences", "evidence": ["https://plato.stanford.edu/entries/frege/"], "weight": 0.6},
+    {"from": "russell-1903", "to": "turing-1936", "relation": "influences", "weight": 0.5},
+    {"from": "church-1936", "to": "turing-1936", "relation": "synthesizes", "evidence": ["https://doi.org/10.2307/2269326"]},
+    {"from": "turing-1936", "to": "von-neumann-1945", "relation": "influences"},
+    {"from": "simula-1967", "to": "dartmouth-1956", "relation": "synthesizes", "note": "ligação OOP→IA simbólica (indireta/história de PLs e representações)", "weight": 0.2}
+  ]
+}
