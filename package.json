@@ -9,8 +9,16 @@
     "services/*"
   ],
   "scripts": {
+    "kill": "bash -c 'turbo kill || true'",
+    "clean": "bash -c 'turbo kill || true; rm -rf .pages web/dist apps/*/dist services/*/.turbo services/*/.pages; rm -rf .turbo 2>/dev/null || true; rm -rf node_modules 2>/dev/null || true'",
+    "install:all": "yarn install",
     "build": "turbo run build",
-    "dev": "turbo run dev --parallel",
+    "compose:pages": "bash -c 'mkdir -p .pages && cp -r web/dist/* .pages/ && mkdir -p .pages/apps && if ls apps 1> /dev/null 2>&1; then cp -r apps/* .pages/apps/ || true; fi && cp .pages/index.html .pages/404.html'",
+    "serve:pages": "npx serve .pages -l 3000",
+    "start:dev": "turbo run dev --parallel",
+    "start:fast": "yarn build && yarn compose:pages && yarn serve:pages",
+    "start:fresh": "yarn kill && yarn clean && yarn install:all && yarn start:fast",
+    "rebuild": "yarn clean && yarn build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck"
   },

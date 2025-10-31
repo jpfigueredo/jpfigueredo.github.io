@@ -1,1 +1,1 @@
-{"root":["./src/main.tsx","./src/mdx.d.ts","./src/vite-env.d.ts","./src/components/Starfield.tsx"],"version":"5.9.3"}
+{"root":["./src/main.tsx","./src/mdx.d.ts","./src/vite-env.d.ts","./src/components/Starfield.tsx","./src/components/timeline/ConstellationTimeline.tsx","./src/components/timeline/SearchBar.tsx"],"version":"5.9.3"}

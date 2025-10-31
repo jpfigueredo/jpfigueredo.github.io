@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider, Link, useLocation } from 'react-router-dom';
 import { PageContainer, NeonText } from '@jpfig/ui';
 import { Starfield } from './components/Starfield';
+import { ConstellationTimeline } from './components/timeline/ConstellationTimeline';
+import { SearchBar } from './components/timeline/SearchBar';
+import type { SearchMode } from './components/timeline/SearchBar';
 import './index.css';
 
 // Header Component
@@ -452,22 +455,30 @@ const Goom64 = () => (
   </MainLayout>
 );
 
-const SwTimeline = () => (
-  <MainLayout>
-    <div className="p-4 sm:p-6">
-      <div className="mb-4 sm:mb-6">
-        <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">
-          <span className="text-neon">SW Timeline</span>
-        </h1>
-        <p className="text-slate-400 text-sm sm:text-base">
-          Linha do tempo interativa da Engenharia de Software, conectando padrões, 
-          anti-padrões e paradigmas através de fontes primárias e visualizações em constelações.
-        </p>
+const SwTimeline = () => {
+  const [q, setQ] = React.useState('');
+  const [mode, setMode] = React.useState<SearchMode>('highlight');
+
+  return (
+    <MainLayout>
+      <div className="p-4 sm:p-6">
+        <div className="mb-4 sm:mb-6">
+          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">
+            <span className="text-neon">SW Timeline</span>
+          </h1>
+          <p className="text-slate-400 text-sm sm:text-base">
+            Linha do tempo interativa da Engenharia de Software, conectando padrões, 
+            anti-padrões e paradigmas através de fontes primárias e visualizações em constelações.
+          </p>
+        </div>
+        <SearchBar value={q} mode={mode} onChange={setQ} onModeChange={setMode} />
+        <div className="border border-slate-700 rounded-lg bg-slate-900/40">
+          <ConstellationTimeline height={520} query={q} mode={mode} />
+        </div>
       </div>
-      <IframeViewport src="/apps/sw-timeline/index.html" title="sw-timeline" />
-    </div>
-  </MainLayout>
-);
+    </MainLayout>
+  );
+};
 
 import IntroDoc from './docs/intro.mdx';
 const Docs = () => (
