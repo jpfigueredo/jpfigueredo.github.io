@@ -19,10 +19,40 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
   const transformRef = useRef<{ offsetX: number; offsetY: number; scale: number }>({ offsetX: 0, offsetY: 0, scale: 1 });
   const isPanningRef = useRef(false);
   const lastPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const velocityRef = useRef<{ vx: number; vy: number }>({ vx: 0, vy: 0 });
+  const momentumRaf = useRef<number | null>(null);
   const [hover, setHover] = useState<{ x: number; y: number; nodeIndex: number | null }>({ x: 0, y: 0, nodeIndex: null });
   const [tick, setTick] = useState(0); // force redraws
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const layoutRef = useRef<{ x: number; y: number; index: number }[]>([]);
+
+  // initialize from hash
+  useEffect(() => {
+    const key = 'sw-node=';
+    const parse = () => {
+      const hash = window.location.hash;
+      const p = hash.indexOf(key);
+      if (p === -1) return null;
+      const id = decodeURIComponent(hash.slice(p + key.length));
+      const idx = dataset.nodes.findIndex(n => n.id === id);
+      return idx >= 0 ? idx : null;
+    };
+    const idx = parse();
+    if (idx !== null) setSelectedIndex(idx);
+    const onHash = () => {
+      const i = parse();
+      if (i !== null) setSelectedIndex(i);
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  const setDeepLink = (index: number | null) => {
+    if (index === null) return;
+    const base = window.location.href.split('#')[0];
+    const id = dataset.nodes[index].id;
+    history.replaceState(null, '', `${base}#sw-node=${encodeURIComponent(id)}`);
+  };
 
   useEffect(() => {
     const canvas = ref.current;
@@ -131,6 +161,8 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
 
     const redraw = () => setTick(t => t + 1);
 
+    const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const rect = canvas.getBoundingClientRect();
@@ -138,7 +170,7 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
       const my = e.clientY - rect.top;
       const t = transformRef.current;
       const factor = e.deltaY < 0 ? 1.1 : 0.9;
-      const newScale = Math.min(4, Math.max(0.25, t.scale * factor));
+      const newScale = clamp(t.scale * factor, 0.25, 3.0);
       const worldX = (mx - t.offsetX) / t.scale;
       const worldY = (my - t.offsetY) / t.scale;
       const newOffsetX = mx - worldX * newScale;
@@ -163,6 +195,7 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
         lastPosRef.current = { x: e.clientX, y: e.clientY };
         const t = transformRef.current;
         transformRef.current = { offsetX: t.offsetX + dx, offsetY: t.offsetY + dy, scale: t.scale };
+        velocityRef.current = { vx: dx, vy: dy };
         setHover(h => ({ ...h, nodeIndex: null }));
         redraw();
         return;
@@ -211,6 +244,24 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
     const onMouseUp = () => {
       isPanningRef.current = false;
       if (containerRef.current) containerRef.current.style.cursor = 'default';
+      // momentum with decay
+      const decay = 0.92;
+      const minSpeed = 0.2;
+      const step = () => {
+        const { vx, vy } = velocityRef.current;
+        const speed = Math.hypot(vx, vy);
+        if (speed < minSpeed) {
+          if (momentumRaf.current) cancelAnimationFrame(momentumRaf.current);
+          momentumRaf.current = null;
+          return;
+        }
+        const t = transformRef.current;
+        transformRef.current = { offsetX: t.offsetX + vx, offsetY: t.offsetY + vy, scale: t.scale };
+        velocityRef.current = { vx: vx * decay, vy: vy * decay };
+        redraw();
+        momentumRaf.current = requestAnimationFrame(step);
+      };
+      if (!momentumRaf.current) momentumRaf.current = requestAnimationFrame(step);
     };
 
     const onMouseLeave = () => {
@@ -240,7 +291,14 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
           picked = p.index;
         }
       }
+      if (picked !== null && (e.ctrlKey || e.metaKey)) {
+        const node = dataset.nodes[picked];
+        const firstSrc = node.sources && node.sources[0];
+        if (firstSrc) window.open(firstSrc, '_blank');
+        return;
+      }
       setSelectedIndex(picked);
+      if (picked !== null) setDeepLink(picked);
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -272,11 +330,21 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
       window.removeEventListener('mouseup', onMouseUp);
       canvas.removeEventListener('mouseleave', onMouseLeave);
       window.removeEventListener('keydown', onKeyDown);
+      if (momentumRaf.current) {
+        cancelAnimationFrame(momentumRaf.current);
+        momentumRaf.current = null;
+      }
     };
   }, [height, query, mode, hover.nodeIndex]);
 
   return (
-    <div ref={containerRef} className="w-full relative" style={{ cursor: 'default' }} tabIndex={0} aria-label="Constellation timeline canvas">
+    <div
+      ref={containerRef}
+      className="w-full relative outline-none focus:ring-2 focus:ring-neon/60 focus:rounded-md"
+      style={{ cursor: 'default' }}
+      tabIndex={0}
+      aria-label="Constellation timeline canvas"
+    >
       <canvas ref={ref} style={{ width: '100%', height }} />
       {hover.nodeIndex !== null && (
         <div
@@ -299,11 +367,29 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
               <div className="text-neon font-semibold">{dataset.nodes[selectedIndex].label}</div>
               <div className="text-xs text-slate-400">{yearOf(dataset.nodes[selectedIndex].date)}</div>
             </div>
-            <button
-              onClick={() => setSelectedIndex(null)}
-              className="pointer-events-auto text-slate-400 hover:text-neon"
-              aria-label="Close details"
-            >✕</button>
+            <div className="flex gap-2 pointer-events-auto">
+              <button
+                onClick={() => {
+                  const src = dataset.nodes[selectedIndex!].sources && dataset.nodes[selectedIndex!].sources![0];
+                  if (src) window.open(src, '_blank');
+                }}
+                className="px-2 py-1 text-xs border border-slate-600 rounded hover:border-neon hover:text-neon"
+              >Open source</button>
+              <button
+                onClick={async () => {
+                  const base = window.location.href.split('#')[0];
+                  const id = dataset.nodes[selectedIndex!].id;
+                  const link = `${base}#sw-node=${encodeURIComponent(id)}`;
+                  try { await navigator.clipboard.writeText(link); } catch {}
+                }}
+                className="px-2 py-1 text-xs border border-slate-600 rounded hover:border-neon hover:text-neon"
+              >Copy link</button>
+              <button
+                onClick={() => setSelectedIndex(null)}
+                className="text-slate-400 hover:text-neon"
+                aria-label="Close details"
+              >✕</button>
+            </div>
           </div>
           {(dataset.nodes[selectedIndex] as any).summary && (
             <div className="mt-2 text-sm text-slate-300">{(dataset.nodes[selectedIndex] as any).summary}</div>

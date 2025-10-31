@@ -20,7 +20,9 @@
     "start:fresh": "yarn kill && yarn clean && yarn install:all && yarn start:fast",
     "rebuild": "yarn clean && yarn build",
     "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "verify:links": "node scripts/verify-sources.mjs",
+    "ci:verify:links": "node scripts/verify-sources.mjs --ci"
   },
   "devDependencies": {
     "turbo": "^2.1.1"
