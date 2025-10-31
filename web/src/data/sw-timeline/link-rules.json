@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json.schemastore.org/json-schema",
+  "description": "Canonical link suggestions for primary sources by node id.",
+  "rules": [
+    {
+      "id": "von-neumann-1945",
+      "label": "First Draft of a Report on the EDVAC",
+      "preferred": [
+        "https://archive.org/details/firstdraftofrepo00john",
+        "https://doi.org/10.6028/NBS.CIRC.556" 
+      ],
+      "notes": "Prefer archive.org or DOI-based copies over tertiary aggregators."
+    },
+    {
+      "id": "dartmouth-1956",
+      "label": "Dartmouth Summer Research Project on Artificial Intelligence (1956)",
+      "preferred": [
+        "https://home.dartmouth.edu/about/artificial-intelligence-ai-coined-dartmouth",
+        "https://dl.acm.org/doi/10.1145/320324.320386"
+      ],
+      "notes": "Use Dartmouth official page or ACM historical proceedings; avoid generic corporate summaries."
+    }
+  ]
+}
+
+
