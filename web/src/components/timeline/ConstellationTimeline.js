@@ -12,8 +12,42 @@ export const ConstellationTimeline = ({ height = 600, query = '', mode = 'highli
     const transformRef = useRef({ offsetX: 0, offsetY: 0, scale: 1 });
     const isPanningRef = useRef(false);
     const lastPosRef = useRef({ x: 0, y: 0 });
+    const velocityRef = useRef({ vx: 0, vy: 0 });
+    const momentumRaf = useRef(null);
     const [hover, setHover] = useState({ x: 0, y: 0, nodeIndex: null });
     const [tick, setTick] = useState(0); // force redraws
+    const [selectedIndex, setSelectedIndex] = useState(null);
+    const layoutRef = useRef([]);
+    // initialize from hash
+    useEffect(() => {
+        const key = 'sw-node=';
+        const parse = () => {
+            const hash = window.location.hash;
+            const p = hash.indexOf(key);
+            if (p === -1)
+                return null;
+            const id = decodeURIComponent(hash.slice(p + key.length));
+            const idx = dataset.nodes.findIndex(n => n.id === id);
+            return idx >= 0 ? idx : null;
+        };
+        const idx = parse();
+        if (idx !== null)
+            setSelectedIndex(idx);
+        const onHash = () => {
+            const i = parse();
+            if (i !== null)
+                setSelectedIndex(i);
+        };
+        window.addEventListener('hashchange', onHash);
+        return () => window.removeEventListener('hashchange', onHash);
+    }, []);
+    const setDeepLink = (index) => {
+        if (index === null)
+            return;
+        const base = window.location.href.split('#')[0];
+        const id = dataset.nodes[index].id;
+        history.replaceState(null, '', `${base}#sw-node=${encodeURIComponent(id)}`);
+    };
     useEffect(() => {
         const canvas = ref.current;
         if (!canvas)
@@ -77,9 +111,11 @@ export const ConstellationTimeline = ({ height = 600, query = '', mode = 'highli
             }
         });
         // Draw nodes
-        dataset.nodes.forEach((n) => {
+        layoutRef.current = [];
+        dataset.nodes.forEach((n, i) => {
             const x = xScale(n.type);
             const y = yScale(yearOf(n.date));
+            layoutRef.current.push({ x, y, index: i });
             const text = `${n.label} ${(n.tags ?? []).join(' ')}`;
             const isMatch = matches(text);
             if (mode === 'filter' && q && !isMatch)
@@ -89,18 +125,28 @@ export const ConstellationTimeline = ({ height = 600, query = '', mode = 'highli
             ctx.beginPath();
             ctx.arc(x, y, isMatch && q ? 5 : 4, 0, Math.PI * 2);
             ctx.fill();
+            // selection ring
+            if (selectedIndex === i) {
+                ctx.strokeStyle = 'rgba(0,240,255,0.9)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(x, y, 9, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.lineWidth = 1.2;
+            }
             ctx.fillStyle = isMatch && q ? 'rgba(0,240,255,0.95)' : 'rgba(226,232,240,0.9)';
             ctx.font = '12px Inter, system-ui, sans-serif';
             ctx.fillText(`${n.label} (${yearOf(n.date)})`, x + 8, y - 8);
         });
         ctx.restore();
-    }, [height, query, mode, tick]);
+    }, [height, query, mode, tick, selectedIndex]);
     // interactions: pan, zoom, hover tooltip
     useEffect(() => {
         const canvas = ref.current;
         if (!canvas)
             return;
         const redraw = () => setTick(t => t + 1);
+        const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
         const onWheel = (e) => {
             e.preventDefault();
             const rect = canvas.getBoundingClientRect();
@@ -108,7 +154,7 @@ export const ConstellationTimeline = ({ height = 600, query = '', mode = 'highli
             const my = e.clientY - rect.top;
             const t = transformRef.current;
             const factor = e.deltaY < 0 ? 1.1 : 0.9;
-            const newScale = Math.min(4, Math.max(0.25, t.scale * factor));
+            const newScale = clamp(t.scale * factor, 0.25, 3.0);
             const worldX = (mx - t.offsetX) / t.scale;
             const worldY = (my - t.offsetY) / t.scale;
             const newOffsetX = mx - worldX * newScale;
@@ -132,6 +178,7 @@ export const ConstellationTimeline = ({ height = 600, query = '', mode = 'highli
                 lastPosRef.current = { x: e.clientX, y: e.clientY };
                 const t = transformRef.current;
                 transformRef.current = { offsetX: t.offsetX + dx, offsetY: t.offsetY + dy, scale: t.scale };
+                velocityRef.current = { vx: dx, vy: dy };
                 setHover(h => ({ ...h, nodeIndex: null }));
                 redraw();
                 return;
@@ -180,6 +227,26 @@ export const ConstellationTimeline = ({ height = 600, query = '', mode = 'highli
             isPanningRef.current = false;
             if (containerRef.current)
                 containerRef.current.style.cursor = 'default';
+            // momentum with decay
+            const decay = 0.92;
+            const minSpeed = 0.2;
+            const step = () => {
+                const { vx, vy } = velocityRef.current;
+                const speed = Math.hypot(vx, vy);
+                if (speed < minSpeed) {
+                    if (momentumRaf.current)
+                        cancelAnimationFrame(momentumRaf.current);
+                    momentumRaf.current = null;
+                    return;
+                }
+                const t = transformRef.current;
+                transformRef.current = { offsetX: t.offsetX + vx, offsetY: t.offsetY + vy, scale: t.scale };
+                velocityRef.current = { vx: vx * decay, vy: vy * decay };
+                redraw();
+                momentumRaf.current = requestAnimationFrame(step);
+            };
+            if (!momentumRaf.current)
+                momentumRaf.current = requestAnimationFrame(step);
         };
         const onMouseLeave = () => {
             isPanningRef.current = false;
@@ -188,18 +255,108 @@ export const ConstellationTimeline = ({ height = 600, query = '', mode = 'highli
             if (hover.nodeIndex !== null)
                 setHover(h => ({ ...h, nodeIndex: null }));
         };
+        const onClick = (e) => {
+            const canvas = ref.current;
+            if (!canvas)
+                return;
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+            const t = transformRef.current;
+            const wx = (mx - t.offsetX) / t.scale;
+            const wy = (my - t.offsetY) / t.scale;
+            // pick nearest within radius using layout
+            let picked = null;
+            let best = Infinity;
+            for (const p of layoutRef.current) {
+                const dx = wx - p.x;
+                const dy = wy - p.y;
+                const d2 = dx * dx + dy * dy;
+                if (d2 < 12 * 12 && d2 < best) {
+                    best = d2;
+                    picked = p.index;
+                }
+            }
+            if (picked !== null && (e.ctrlKey || e.metaKey)) {
+                const node = dataset.nodes[picked];
+                const firstSrc = node.sources && node.sources[0];
+                if (firstSrc)
+                    window.open(firstSrc, '_blank');
+                return;
+            }
+            setSelectedIndex(picked);
+            if (picked !== null)
+                setDeepLink(picked);
+        };
+        const onKeyDown = (e) => {
+            if (!containerRef.current)
+                return;
+            const t = transformRef.current;
+            const step = 40;
+            if (e.key === 'ArrowLeft') {
+                transformRef.current = { ...t, offsetX: t.offsetX + step };
+                setSelectedIndex(null);
+                setTick(v => v + 1);
+            }
+            else if (e.key === 'ArrowRight') {
+                transformRef.current = { ...t, offsetX: t.offsetX - step };
+                setSelectedIndex(null);
+                setTick(v => v + 1);
+            }
+            else if (e.key === 'ArrowUp') {
+                transformRef.current = { ...t, offsetY: t.offsetY + step };
+                setSelectedIndex(null);
+                setTick(v => v + 1);
+            }
+            else if (e.key === 'ArrowDown') {
+                transformRef.current = { ...t, offsetY: t.offsetY - step };
+                setSelectedIndex(null);
+                setTick(v => v + 1);
+            }
+            else if (e.key === '+') {
+                const evt = new WheelEvent('wheel', { deltaY: -1 });
+                ref.current?.dispatchEvent(evt);
+            }
+            else if (e.key === '-') {
+                const evt = new WheelEvent('wheel', { deltaY: 1 });
+                ref.current?.dispatchEvent(evt);
+            }
+            else if (e.key === 'Escape') {
+                setSelectedIndex(null);
+            }
+        };
         canvas.addEventListener('wheel', onWheel, { passive: false });
         canvas.addEventListener('mousedown', onMouseDown);
+        canvas.addEventListener('click', onClick);
         window.addEventListener('mousemove', onMouseMove);
         window.addEventListener('mouseup', onMouseUp);
         canvas.addEventListener('mouseleave', onMouseLeave);
+        window.addEventListener('keydown', onKeyDown);
         return () => {
             canvas.removeEventListener('wheel', onWheel);
             canvas.removeEventListener('mousedown', onMouseDown);
+            canvas.removeEventListener('click', onClick);
             window.removeEventListener('mousemove', onMouseMove);
             window.removeEventListener('mouseup', onMouseUp);
             canvas.removeEventListener('mouseleave', onMouseLeave);
+            window.removeEventListener('keydown', onKeyDown);
+            if (momentumRaf.current) {
+                cancelAnimationFrame(momentumRaf.current);
+                momentumRaf.current = null;
+            }
         };
     }, [height, query, mode, hover.nodeIndex]);
-    return (_jsxs("div", { ref: containerRef, className: "w-full relative", style: { cursor: 'default' }, children: [_jsx("canvas", { ref: ref, style: { width: '100%', height } }), hover.nodeIndex !== null && (_jsxs("div", { className: "pointer-events-none absolute z-10 p-3 rounded-md text-xs bg-slate-900/90 border border-slate-700 text-slate-200 shadow-lg max-w-xs", style: { left: hover.x, top: hover.y }, children: [_jsx("div", { className: "font-semibold text-neon mb-1", children: dataset.nodes[hover.nodeIndex].label }), dataset.nodes[hover.nodeIndex].summary && (_jsx("div", { className: "text-slate-300", children: dataset.nodes[hover.nodeIndex].summary })), dataset.nodes[hover.nodeIndex].tags && dataset.nodes[hover.nodeIndex].tags.length > 0 && (_jsxs("div", { className: "mt-1 text-slate-400", children: ["Tags: ", dataset.nodes[hover.nodeIndex].tags.slice(0, 6).join(', ')] }))] }))] }));
+    return (_jsxs("div", { ref: containerRef, className: "w-full relative outline-none focus:ring-2 focus:ring-neon/60 focus:rounded-md", style: { cursor: 'default' }, tabIndex: 0, "aria-label": "Constellation timeline canvas", children: [_jsx("canvas", { ref: ref, style: { width: '100%', height } }), hover.nodeIndex !== null && (_jsxs("div", { className: "pointer-events-none absolute z-10 p-3 rounded-md text-xs bg-slate-900/90 border border-slate-700 text-slate-200 shadow-lg max-w-xs", style: { left: hover.x, top: hover.y }, children: [_jsx("div", { className: "font-semibold text-neon mb-1", children: dataset.nodes[hover.nodeIndex].label }), dataset.nodes[hover.nodeIndex].summary && (_jsx("div", { className: "text-slate-300", children: dataset.nodes[hover.nodeIndex].summary })), dataset.nodes[hover.nodeIndex].tags && dataset.nodes[hover.nodeIndex].tags.length > 0 && (_jsxs("div", { className: "mt-1 text-slate-400", children: ["Tags: ", dataset.nodes[hover.nodeIndex].tags.slice(0, 6).join(', ')] }))] })), selectedIndex !== null && (_jsxs("div", { className: "absolute right-3 bottom-3 z-10 max-w-sm p-4 rounded-lg bg-slate-900/90 border border-slate-700 text-slate-200 shadow-xl", children: [_jsxs("div", { className: "flex items-start justify-between gap-3", children: [_jsxs("div", { children: [_jsx("div", { className: "text-neon font-semibold", children: dataset.nodes[selectedIndex].label }), _jsx("div", { className: "text-xs text-slate-400", children: yearOf(dataset.nodes[selectedIndex].date) })] }), _jsxs("div", { className: "flex gap-2 pointer-events-auto", children: [_jsx("button", { onClick: () => {
+                                            const src = dataset.nodes[selectedIndex].sources && dataset.nodes[selectedIndex].sources[0];
+                                            if (src)
+                                                window.open(src, '_blank');
+                                        }, className: "px-2 py-1 text-xs border border-slate-600 rounded hover:border-neon hover:text-neon", children: "Open source" }), _jsx("button", { onClick: async () => {
+                                            const base = window.location.href.split('#')[0];
+                                            const id = dataset.nodes[selectedIndex].id;
+                                            const link = `${base}#sw-node=${encodeURIComponent(id)}`;
+                                            try {
+                                                await navigator.clipboard.writeText(link);
+                                            }
+                                            catch { }
+                                        }, className: "px-2 py-1 text-xs border border-slate-600 rounded hover:border-neon hover:text-neon", children: "Copy link" }), _jsx("button", { onClick: () => setSelectedIndex(null), className: "text-slate-400 hover:text-neon", "aria-label": "Close details", children: "\u2715" })] })] }), dataset.nodes[selectedIndex].summary && (_jsx("div", { className: "mt-2 text-sm text-slate-300", children: dataset.nodes[selectedIndex].summary })), dataset.nodes[selectedIndex].sources && dataset.nodes[selectedIndex].sources.length > 0 && (_jsxs("div", { className: "mt-3", children: [_jsx("div", { className: "text-xs text-slate-400 mb-1", children: "Fontes prim\u00E1rias" }), _jsx("ul", { className: "list-disc pl-5 space-y-1 text-sm", children: dataset.nodes[selectedIndex].sources.slice(0, 6).map((src, i) => (_jsx("li", { children: _jsx("a", { className: "text-neon hover:underline", href: src, target: "_blank", rel: "noreferrer", children: src }) }, i))) })] }))] }))] }));
 };
