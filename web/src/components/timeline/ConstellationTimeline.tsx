@@ -21,6 +21,8 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
   const lastPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const [hover, setHover] = useState<{ x: number; y: number; nodeIndex: number | null }>({ x: 0, y: 0, nodeIndex: null });
   const [tick, setTick] = useState(0); // force redraws
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const layoutRef = useRef<{ x: number; y: number; index: number }[]>([]);
 
   useEffect(() => {
     const canvas = ref.current;
@@ -89,9 +91,11 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
     });
 
     // Draw nodes
-    dataset.nodes.forEach((n: Node) => {
+    layoutRef.current = [];
+    dataset.nodes.forEach((n: Node, i: number) => {
       const x = xScale(n.type);
       const y = yScale(yearOf(n.date));
+      layoutRef.current.push({ x, y, index: i });
       const text = `${n.label} ${(n.tags ?? []).join(' ')}`;
       const isMatch = matches(text);
       if (mode === 'filter' && q && !isMatch) return;
@@ -102,13 +106,23 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
       ctx.arc(x, y, isMatch && q ? 5 : 4, 0, Math.PI * 2);
       ctx.fill();
 
+      // selection ring
+      if (selectedIndex === i) {
+        ctx.strokeStyle = 'rgba(0,240,255,0.9)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(x, y, 9, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.lineWidth = 1.2;
+      }
+
       ctx.fillStyle = isMatch && q ? 'rgba(0,240,255,0.95)' : 'rgba(226,232,240,0.9)';
       ctx.font = '12px Inter, system-ui, sans-serif';
       ctx.fillText(`${n.label} (${yearOf(n.date)})`, x + 8, y - 8);
     });
 
     ctx.restore();
-  }, [height, query, mode, tick]);
+  }, [height, query, mode, tick, selectedIndex]);
 
   // interactions: pan, zoom, hover tooltip
   useEffect(() => {
@@ -205,23 +219,64 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
       if (hover.nodeIndex !== null) setHover(h => ({ ...h, nodeIndex: null }));
     };
 
+    const onClick = (e: MouseEvent) => {
+      const canvas = ref.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const t = transformRef.current;
+      const wx = (mx - t.offsetX) / t.scale;
+      const wy = (my - t.offsetY) / t.scale;
+      // pick nearest within radius using layout
+      let picked: number | null = null;
+      let best = Infinity;
+      for (const p of layoutRef.current) {
+        const dx = wx - p.x;
+        const dy = wy - p.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < 12 * 12 && d2 < best) {
+          best = d2;
+          picked = p.index;
+        }
+      }
+      setSelectedIndex(picked);
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!containerRef.current) return;
+      const t = transformRef.current;
+      const step = 40;
+      if (e.key === 'ArrowLeft') { transformRef.current = { ...t, offsetX: t.offsetX + step }; setSelectedIndex(null); setTick(v => v + 1); }
+      else if (e.key === 'ArrowRight') { transformRef.current = { ...t, offsetX: t.offsetX - step }; setSelectedIndex(null); setTick(v => v + 1); }
+      else if (e.key === 'ArrowUp') { transformRef.current = { ...t, offsetY: t.offsetY + step }; setSelectedIndex(null); setTick(v => v + 1); }
+      else if (e.key === 'ArrowDown') { transformRef.current = { ...t, offsetY: t.offsetY - step }; setSelectedIndex(null); setTick(v => v + 1); }
+      else if (e.key === '+') { const evt = new WheelEvent('wheel', { deltaY: -1 }); ref.current?.dispatchEvent(evt); }
+      else if (e.key === '-') { const evt = new WheelEvent('wheel', { deltaY: 1 }); ref.current?.dispatchEvent(evt); }
+      else if (e.key === 'Escape') { setSelectedIndex(null); }
+    };
+
     canvas.addEventListener('wheel', onWheel, { passive: false });
     canvas.addEventListener('mousedown', onMouseDown);
+    canvas.addEventListener('click', onClick);
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
     canvas.addEventListener('mouseleave', onMouseLeave);
+    window.addEventListener('keydown', onKeyDown);
 
     return () => {
       canvas.removeEventListener('wheel', onWheel as EventListener);
       canvas.removeEventListener('mousedown', onMouseDown);
+      canvas.removeEventListener('click', onClick);
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
       canvas.removeEventListener('mouseleave', onMouseLeave);
+      window.removeEventListener('keydown', onKeyDown);
     };
   }, [height, query, mode, hover.nodeIndex]);
 
   return (
-    <div ref={containerRef} className="w-full relative" style={{ cursor: 'default' }}>
+    <div ref={containerRef} className="w-full relative" style={{ cursor: 'default' }} tabIndex={0} aria-label="Constellation timeline canvas">
       <canvas ref={ref} style={{ width: '100%', height }} />
       {hover.nodeIndex !== null && (
         <div
@@ -234,6 +289,36 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
           )}
           {dataset.nodes[hover.nodeIndex].tags && dataset.nodes[hover.nodeIndex].tags!.length > 0 && (
             <div className="mt-1 text-slate-400">Tags: {dataset.nodes[hover.nodeIndex].tags!.slice(0, 6).join(', ')}</div>
+          )}
+        </div>
+      )}
+      {selectedIndex !== null && (
+        <div className="absolute right-3 bottom-3 z-10 max-w-sm p-4 rounded-lg bg-slate-900/90 border border-slate-700 text-slate-200 shadow-xl">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-neon font-semibold">{dataset.nodes[selectedIndex].label}</div>
+              <div className="text-xs text-slate-400">{yearOf(dataset.nodes[selectedIndex].date)}</div>
+            </div>
+            <button
+              onClick={() => setSelectedIndex(null)}
+              className="pointer-events-auto text-slate-400 hover:text-neon"
+              aria-label="Close details"
+            >✕</button>
+          </div>
+          {(dataset.nodes[selectedIndex] as any).summary && (
+            <div className="mt-2 text-sm text-slate-300">{(dataset.nodes[selectedIndex] as any).summary}</div>
+          )}
+          {dataset.nodes[selectedIndex].sources && dataset.nodes[selectedIndex].sources!.length > 0 && (
+            <div className="mt-3">
+              <div className="text-xs text-slate-400 mb-1">Fontes primárias</div>
+              <ul className="list-disc pl-5 space-y-1 text-sm">
+                {dataset.nodes[selectedIndex].sources!.slice(0, 6).map((src: string, i: number) => (
+                  <li key={i}>
+                    <a className="text-neon hover:underline" href={src} target="_blank" rel="noreferrer">{src}</a>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       )}
