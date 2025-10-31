@@ -10,7 +10,7 @@ type RenderContext = {
   height: number;
   transform: Transform;
   layoutConfig: LayoutConfig;
-  indexToOffset: Map<number, number>;
+  indexToPosition: Map<number, { x: number; y: number }>; // 2D position (constellation layout)
   nodes: Node[];
   edges: Edge[];
   query: string;
@@ -59,109 +59,168 @@ function drawBaseline(ctx: CanvasRenderingContext2D, config: LayoutConfig, canva
   ctx.lineTo(endX, baselineY);
   ctx.stroke();
 
-  // Draw animated meteorite with fire particles at the end (anime-style)
+  // Draw scientific comet visualization at timeline end (NASA-style: nucleus, coma, dust tail, ion tail)
   drawMeteorite(ctx, endX, baselineY, animationTime || 0);
 }
 
-// Animated meteorite with fire particles (realistic anime-style burning effect)
+// Scientific comet visualization (NASA-style): nucleus, coma, dust tail, ion tail
+// Horizontal orientation: comet moves right (towards future)
 function drawMeteorite(ctx: CanvasRenderingContext2D, x: number, y: number, animationTime: number) {
-  const time = animationTime * 0.001; // Convert to seconds
+  const time = animationTime * 0.001;
+  // Horizontal direction: moving right (towards future)
   
-  // Fire trail - draw first (behind meteorite) for proper layering
-  const particleCount = 20;
-  for (let i = 0; i < particleCount; i++) {
-    const particleTime = time + i * 0.15; // Stagger particles
-    const angle = (i / particleCount) * Math.PI * 0.7 - Math.PI * 0.35; // Fan out behind (wider spread)
-    const speed = 25 + (i % 4) * 12;
-    const distance = (particleTime * speed) % 80; // Longer trail
-    
-    const px = x - Math.cos(angle) * distance;
-    const py = y - Math.sin(angle) * distance;
-    
-    // Particle size decreases with distance
-    const size = Math.max(1.5, 8 - distance * 0.1);
-    
-    // Fire colors: white-hot -> orange -> red -> dark (realistic progression)
-    const life = 1 - (distance / 80);
-    const fireGradient = ctx.createRadialGradient(px, py, 0, px, py, size * 2.5);
-    
-    if (life > 0.6) {
-      // White-hot core: intense white-yellow
-      fireGradient.addColorStop(0, `rgba(255,255,220,${life * 0.8})`);
-      fireGradient.addColorStop(0.3, `rgba(255,240,150,${life * 0.7})`);
-      fireGradient.addColorStop(0.6, `rgba(255,180,80,${life * 0.6})`);
-      fireGradient.addColorStop(1, `rgba(255,120,40,${life * 0.4})`);
-    } else if (life > 0.3) {
-      // Orange-red: main fire
-      fireGradient.addColorStop(0, `rgba(255,180,60,${life * 0.7})`);
-      fireGradient.addColorStop(0.4, `rgba(255,120,30,${life * 0.6})`);
-      fireGradient.addColorStop(0.8, `rgba(200,60,10,${life * 0.4})`);
-      fireGradient.addColorStop(1, `rgba(150,30,5,${life * 0.2})`);
-    } else {
-      // Cooling: dark red embers
-      fireGradient.addColorStop(0, `rgba(200,80,20,${life * 0.5})`);
-      fireGradient.addColorStop(0.5, `rgba(150,40,10,${life * 0.3})`);
-      fireGradient.addColorStop(1, `rgba(80,20,5,${life * 0.1})`);
-    }
-    
-    ctx.fillStyle = fireGradient as CanvasGradient;
+  // === ION TAIL (blue, straight, affected by solar wind) ===
+  // Ion tail extends horizontally to the right (towards future)
+  const ionTailLength = 140;
+  const ionTailWidth = 8;
+  const ionTailOpacity = 0.15;
+  
+  // Ion tail gradient (cyan/blue, faint) - horizontal
+  const ionTailGradient = ctx.createLinearGradient(x, y, x + ionTailLength, y);
+  ionTailGradient.addColorStop(0, `rgba(150,220,255,${ionTailOpacity * 0.8})`);
+  ionTailGradient.addColorStop(0.3, `rgba(100,180,255,${ionTailOpacity * 0.6})`);
+  ionTailGradient.addColorStop(0.7, `rgba(80,160,255,${ionTailOpacity * 0.4})`);
+  ionTailGradient.addColorStop(1, 'rgba(0,0,0,0)');
+  
+  // Draw ion tail as a subtle, straight streak (horizontal)
+  ctx.strokeStyle = ionTailGradient as CanvasGradient;
+  ctx.lineWidth = ionTailWidth;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + ionTailLength, y);
+  ctx.stroke();
+  
+  // Ion tail particles (subtle, sparse, moving horizontally)
+  for (let i = 0; i < 12; i++) {
+    const offset = (time * 25 + i * 12) % ionTailLength;
+    const alpha = (1 - offset / ionTailLength) * ionTailOpacity * 0.3;
+    const spread = (i % 3 - 1) * 2; // Small vertical spread
+    ctx.fillStyle = `rgba(120,200,255,${alpha})`;
     ctx.beginPath();
-    ctx.arc(px, py, size * 2.5, 0, Math.PI * 2);
+    ctx.arc(x + offset, y + spread, 1.5, 0, Math.PI * 2);
     ctx.fill();
-    
-    // Bright sparks (intense flickering)
-    if (i % 2 === 0 && life > 0.4) {
-      const sparkSize = size * 0.8;
-      const sparkX = px + Math.sin(particleTime * 8) * 4;
-      const sparkY = py + Math.cos(particleTime * 8) * 4;
-      ctx.fillStyle = `rgba(255,255,180,${life * 0.8})`;
-      ctx.beginPath();
-      ctx.arc(sparkX, sparkY, sparkSize, 0, Math.PI * 2);
-      ctx.fill();
-    }
   }
-
-  // Subtle outer glow (much reduced brightness)
-  const outerGlow = ctx.createRadialGradient(x, y, 0, x, y, 18);
-  outerGlow.addColorStop(0, 'rgba(255,200,120,0.25)'); // Much reduced from 0.4
-  outerGlow.addColorStop(0.5, 'rgba(255,150,60,0.15)');
-  outerGlow.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = outerGlow as CanvasGradient;
+  
+  // === DUST TAIL (curved, yellow-white, broader) ===
+  // Dust tail curves slightly due to orbital mechanics (horizontal orientation)
+  const dustTailLength = 120;
+  const dustTailCurve = -18; // Curvature amount (negative = curves slightly upward)
+  
+  // Create curved dust tail path (horizontal with slight upward curve)
   ctx.beginPath();
-  ctx.arc(x, y, 18, 0, Math.PI * 2);
+  ctx.moveTo(x, y);
+  // Quadratic curve for natural dust tail shape (horizontal)
+  const controlX = x + dustTailLength * 0.5;
+  const controlY = y + dustTailCurve * 0.5; // Slight upward curve
+  const endX = x + dustTailLength;
+  const endY = y + dustTailCurve;
+  ctx.quadraticCurveTo(controlX, controlY, endX, endY);
+  
+  // Dust tail gradient (yellow-white, broader) - horizontal
+  const dustTailGradient = ctx.createLinearGradient(x, y, endX, endY);
+  dustTailGradient.addColorStop(0, `rgba(255,255,240,0.12)`);
+  dustTailGradient.addColorStop(0.2, `rgba(255,255,220,0.10)`);
+  dustTailGradient.addColorStop(0.5, `rgba(255,250,200,0.08)`);
+  dustTailGradient.addColorStop(0.8, `rgba(255,240,180,0.05)`);
+  dustTailGradient.addColorStop(1, 'rgba(0,0,0,0)');
+  
+  ctx.strokeStyle = dustTailGradient as CanvasGradient;
+  ctx.lineWidth = 12;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  
+  // Secondary dust tail layer (wider, fainter)
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.quadraticCurveTo(controlX * 0.9, controlY * 0.8, endX * 0.95, endY * 0.9);
+  ctx.strokeStyle = `rgba(255,255,230,0.04)`;
+  ctx.lineWidth = 18;
+  ctx.stroke();
+  
+  // Dust particles (subtle, sparse, larger than ions, moving horizontally)
+  for (let i = 0; i < 25; i++) {
+    const t = i / 25;
+    const offsetX = dustTailLength * t;
+    const offsetY = dustTailCurve * t * t; // Quadratic curve (upward)
+    const particleX = x + offsetX + (Math.sin(time * 2 + i) * 4);
+    const particleY = y + offsetY + (Math.cos(time * 1.5 + i) * 3);
+    const alpha = (1 - t) * 0.08;
+    const size = 1.5 + Math.sin(time + i) * 0.5;
+    ctx.fillStyle = `rgba(255,255,220,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(particleX, particleY, size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // === COMA (atmosphere around nucleus) ===
+  // Coma: diffuse cloud of gas and dust around the nucleus
+  const comaRadius = 14;
+  const comaGradient = ctx.createRadialGradient(x, y, 0, x, y, comaRadius);
+  comaGradient.addColorStop(0, 'rgba(255,255,250,0.15)');
+  comaGradient.addColorStop(0.4, 'rgba(255,255,240,0.10)');
+  comaGradient.addColorStop(0.7, 'rgba(255,250,230,0.06)');
+  comaGradient.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = comaGradient as CanvasGradient;
+  ctx.beginPath();
+  ctx.arc(x, y, comaRadius, 0, Math.PI * 2);
   ctx.fill();
-
-  // Meteorite core (rocky, solid appearance with fire highlights)
-  // Main body - dark brown/charcoal with metallic highlights
-  const meteoriteGradient = ctx.createRadialGradient(x, y - 3, 0, x, y, 7);
-  meteoriteGradient.addColorStop(0, 'rgba(180,100,50,0.95)'); // Hot spots
-  meteoriteGradient.addColorStop(0.3, 'rgba(120,60,30,0.9)'); // Main body
-  meteoriteGradient.addColorStop(0.7, 'rgba(60,30,15,0.85)'); // Shadow
-  meteoriteGradient.addColorStop(1, 'rgba(30,15,8,0.7)'); // Edge
-  ctx.fillStyle = meteoriteGradient as CanvasGradient;
+  
+  // === NUCLEUS (solid core) ===
+  // Comet nucleus: dark, irregular, rocky body
+  const nucleusRadius = 4.5;
+  
+  // Nucleus shadow (dark side)
+  ctx.fillStyle = 'rgba(30,25,20,0.95)';
   ctx.beginPath();
-  ctx.arc(x, y, 7, 0, Math.PI * 2);
+  ctx.arc(x, y + 1, nucleusRadius, 0, Math.PI * 2);
   ctx.fill();
-
-  // Fire highlights on front (entry side)
-  const fireHighlights = ctx.createRadialGradient(x - 2, y - 2, 0, x, y, 6);
-  fireHighlights.addColorStop(0, 'rgba(255,200,100,0.6)'); // Intense heat
-  fireHighlights.addColorStop(0.5, 'rgba(255,150,50,0.4)');
-  fireHighlights.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = fireHighlights as CanvasGradient;
+  
+  // Nucleus main body (charcoal/dark brown)
+  const nucleusGradient = ctx.createRadialGradient(
+    x - 1.5, y, 0,
+    x, y, nucleusRadius
+  );
+  nucleusGradient.addColorStop(0, 'rgba(80,70,60,0.98)');
+  nucleusGradient.addColorStop(0.5, 'rgba(50,45,40,0.95)');
+  nucleusGradient.addColorStop(1, 'rgba(35,30,25,0.90)');
+  ctx.fillStyle = nucleusGradient as CanvasGradient;
   ctx.beginPath();
-  ctx.arc(x, y, 6, 0, Math.PI * 2);
+  ctx.arc(x, y, nucleusRadius, 0, Math.PI * 2);
   ctx.fill();
-
-  // Very subtle atmospheric glow (reduced significantly)
-  const atmosphericGlow = ctx.createRadialGradient(x, y, 0, x, y, 35);
-  atmosphericGlow.addColorStop(0, 'rgba(255,180,80,0.12)'); // Much reduced
-  atmosphericGlow.addColorStop(0.4, 'rgba(255,120,40,0.08)');
-  atmosphericGlow.addColorStop(0.7, 'rgba(200,60,20,0.05)');
-  atmosphericGlow.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = atmosphericGlow as CanvasGradient;
+  
+  // Nucleus texture (subtle surface irregularities)
+  ctx.fillStyle = 'rgba(60,55,50,0.4)';
   ctx.beginPath();
-  ctx.arc(x, y, 35, 0, Math.PI * 2);
+  ctx.arc(x - 0.8, y - 0.3, 1.0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 1.0, y + 0.6, 0.7, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Sunlit side highlight (sun is to the left, so highlight left side)
+  const highlightGradient = ctx.createRadialGradient(
+    x - 2, y, 0,
+    x, y, nucleusRadius * 0.8
+  );
+  highlightGradient.addColorStop(0, 'rgba(255,255,250,0.3)');
+  highlightGradient.addColorStop(0.6, 'rgba(255,250,230,0.15)');
+  highlightGradient.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = highlightGradient as CanvasGradient;
+  ctx.beginPath();
+  ctx.arc(x - 0.8, y, nucleusRadius * 0.7, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // === SUBTLE OPTICAL EFFECTS ===
+  // Very faint atmospheric scattering (minimal, scientific)
+  const scatteringRadius = 25;
+  const scatteringGradient = ctx.createRadialGradient(x, y, 0, x, y, scatteringRadius);
+  scatteringGradient.addColorStop(0, 'rgba(200,220,255,0.04)');
+  scatteringGradient.addColorStop(0.5, 'rgba(180,200,255,0.02)');
+  scatteringGradient.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = scatteringGradient as CanvasGradient;
+  ctx.beginPath();
+  ctx.arc(x, y, scatteringRadius, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -193,11 +252,14 @@ function drawDecadeTicks(ctx: CanvasRenderingContext2D, config: LayoutConfig) {
 function drawConstellations(ctx: CanvasRenderingContext2D, rc: RenderContext) {
   if (!rc.showConstellations) return;
 
-  const constellationPoints = rc.nodes.map((n, i) => ({
-    x: xScaleYear(yearOf(n.date), rc.layoutConfig),
-    y: rc.layoutConfig.baselineY + (rc.indexToOffset.get(i) ?? 0),
-    nodeIndex: i,
-  }));
+  const constellationPoints = rc.nodes.map((n, i) => {
+    const pos = rc.indexToPosition.get(i);
+    return {
+      x: pos?.x ?? xScaleYear(yearOf(n.date), rc.layoutConfig),
+      y: pos?.y ?? rc.layoutConfig.baselineY,
+      nodeIndex: i,
+    };
+  });
 
   const maxConnectionDist = Math.min(rc.canvasWidth, rc.height) * 0.15;
   
@@ -249,16 +311,15 @@ function drawEdges(ctx: CanvasRenderingContext2D, rc: RenderContext) {
       if (!(matchesQuery(nodeAText, query) || matchesQuery(nodeBText, query))) return;
     }
 
-    const yearA = yearOf(nodeA.date);
-    const yearB = yearOf(nodeB.date);
-    const nodeAX = xScaleYear(yearA, rc.layoutConfig);
-    const nodeBX = xScaleYear(yearB, rc.layoutConfig);
     const nodeAIndex = rc.nodes.findIndex(n => n.id === nodeA.id);
     const nodeBIndex = rc.nodes.findIndex(n => n.id === nodeB.id);
-    const nodeAOffset = rc.indexToOffset.get(nodeAIndex) ?? 0;
-    const nodeBOffset = rc.indexToOffset.get(nodeBIndex) ?? 0;
-    const nodeAY = rc.layoutConfig.baselineY + nodeAOffset;
-    const nodeBY = rc.layoutConfig.baselineY + nodeBOffset;
+    const posA = rc.indexToPosition.get(nodeAIndex);
+    const posB = rc.indexToPosition.get(nodeBIndex);
+    // Fallback to baseline if position not found
+    const nodeAX = posA?.x ?? xScaleYear(yearOf(nodeA.date), rc.layoutConfig);
+    const nodeAY = posA?.y ?? rc.layoutConfig.baselineY;
+    const nodeBX = posB?.x ?? xScaleYear(yearOf(nodeB.date), rc.layoutConfig);
+    const nodeBY = posB?.y ?? rc.layoutConfig.baselineY;
 
     const deltaX = nodeBX - nodeAX;
     const curveHeight = Math.max(40, Math.min(140, Math.abs(deltaX) * 0.25));
@@ -305,9 +366,12 @@ function drawNodes(ctx: CanvasRenderingContext2D, rc: RenderContext) {
 
   rc.layoutPoints.length = 0; // clear and reuse
   rc.nodes.forEach((node: Node, nodeIndex: number) => {
+    // Use constellation position (2D) or fallback to baseline
+    const pos = rc.indexToPosition.get(nodeIndex);
     const nodeYear = yearOf(node.date);
-    const nodeWorldX = xScaleYear(nodeYear, rc.layoutConfig);
-    const nodeWorldY = rc.layoutConfig.baselineY + (rc.indexToOffset.get(nodeIndex) ?? 0);
+    const baseX = xScaleYear(nodeYear, rc.layoutConfig);
+    const nodeWorldX = pos?.x ?? baseX;
+    const nodeWorldY = pos?.y ?? rc.layoutConfig.baselineY;
     rc.layoutPoints.push({ x: nodeWorldX, y: nodeWorldY, index: nodeIndex });
 
     const nodeText = `${node.label} ${(node.tags ?? []).join(' ')}`;
@@ -316,12 +380,16 @@ function drawNodes(ctx: CanvasRenderingContext2D, rc: RenderContext) {
 
     const isSelected = rc.selectedIndex === nodeIndex;
 
-    // Branch line from baseline to node with subtle glow
+    // Branch line from baseline to node (curved/organic for constellation feel)
     ctx.strokeStyle = isSelected ? 'rgba(0,240,255,0.3)' : 'rgba(226,232,240,0.2)';
     ctx.lineWidth = isSelected ? 1.5 : 1;
     ctx.beginPath();
-    ctx.moveTo(nodeWorldX, rc.layoutConfig.baselineY);
-    ctx.lineTo(nodeWorldX, nodeWorldY);
+    const baseXAtYear = baseX; // Baseline X at the node's year
+    // Draw curved branch for more organic feel
+    const controlY = (rc.layoutConfig.baselineY + nodeWorldY) / 2;
+    const controlX = baseXAtYear + (nodeWorldX - baseXAtYear) * 0.3; // Slight curve
+    ctx.moveTo(baseXAtYear, rc.layoutConfig.baselineY);
+    ctx.quadraticCurveTo(controlX, controlY, nodeWorldX, nodeWorldY);
     ctx.stroke();
 
     // Star glow effect (outer halo)

@@ -3,7 +3,7 @@ import type { Node, Transform, LayoutPoint, Velocity } from '../types';
 import type { SearchMode } from '../SearchBar';
 import { yearOf } from '../utils';
 import { clampTransform } from '../engine/transform';
-import { createLayoutConfig, computeIndexToOffset, xScaleYear } from '../engine/layout';
+import { createLayoutConfig, computeIndexToOffset, xScaleYear, type LayoutConfig } from '../engine/layout';
 
 type HoverState = { screenX: number; screenY: number; nodeIndex: number | null };
 
@@ -26,6 +26,7 @@ type UseTimelineInteractionsOptions = {
   setDeepLink: (index: number) => void;
   centerOnYear: (year: number) => void;
   hover: HoverState;
+  layoutConfig: LayoutConfig; // Pass layoutConfig for proper centering
 };
 
 export function useTimelineInteractions({
@@ -47,6 +48,7 @@ export function useTimelineInteractions({
   setDeepLink,
   centerOnYear,
   hover,
+  layoutConfig,
 }: UseTimelineInteractionsOptions) {
   const isPanningRef = useRef(false);
   const lastMousePosRef = useRef<{ screenX: number; screenY: number }>({ screenX: 0, screenY: 0 });
@@ -71,9 +73,17 @@ export function useTimelineInteractions({
       // Convert screen Y to world Y before scaling
       const worldY = (mouseScreenY - transform.offsetY) / transform.scale;
       // Keep horizontal offset fixed, adjust vertical to zoom towards cursor
-      const newOffsetX = transform.offsetX;
+      // Horizontal offset will be recalculated by clampTransform for centering during zoom
       const newOffsetY = mouseScreenY - worldY * newScale;
-      const clampedTransform = clampTransform({ offsetX: newOffsetX, offsetY: newOffsetY, scale: newScale }, canvas, height, nodes, branchSpacing);
+      const clampedTransform = clampTransform(
+        { offsetX: transform.offsetX, offsetY: newOffsetY, scale: newScale },
+        canvas,
+        height,
+        nodes,
+        branchSpacing,
+        layoutConfig,
+        true // Force horizontal centering during zoom
+      );
       transformRef.current = clampedTransform;
       redraw();
     };
@@ -81,7 +91,8 @@ export function useTimelineInteractions({
     const onMouseDown = (e: MouseEvent) => {
       isPanningRef.current = true;
       lastMousePosRef.current = { screenX: e.clientX, screenY: e.clientY };
-      if (containerRef.current) containerRef.current.style.cursor = 'grabbing';
+      if (containerRef.current) containerRef.current.style.cursor = 'grab';
+      if (canvas) canvas.style.cursor = 'grabbing';
     };
 
     const onMouseMove = (e: MouseEvent) => {
@@ -89,12 +100,22 @@ export function useTimelineInteractions({
       const mouseScreenX = e.clientX - rect.left;
       const mouseScreenY = e.clientY - rect.top;
       if (isPanningRef.current) {
+        const deltaX = e.clientX - lastMousePosRef.current.screenX;
         const deltaY = e.clientY - lastMousePosRef.current.screenY;
         lastMousePosRef.current = { screenX: e.clientX, screenY: e.clientY };
         const transform = transformRef.current;
-        const clampedTransform = clampTransform({ offsetX: transform.offsetX, offsetY: transform.offsetY + deltaY, scale: transform.scale }, canvas, height, nodes, branchSpacing);
+        // Allow horizontal and vertical panning
+        const clampedTransform = clampTransform(
+          { offsetX: transform.offsetX + deltaX, offsetY: transform.offsetY + deltaY, scale: transform.scale },
+          canvas,
+          height,
+          nodes,
+          branchSpacing,
+          layoutConfig,
+          false // Don't force center during panning
+        );
         transformRef.current = clampedTransform;
-        velocityRef.current = { vx: 0, vy: deltaY };
+        velocityRef.current = { vx: deltaX, vy: deltaY };
         setHover(h => ({ ...h, nodeIndex: null }));
         redraw();
         return;
@@ -105,8 +126,8 @@ export function useTimelineInteractions({
       const worldX = (mouseScreenX - transform.offsetX) / transform.scale;
       const worldY = (mouseScreenY - transform.offsetY) / transform.scale;
 
-      const hoverLayoutConfig = createLayoutConfig(nodes, canvas.clientWidth, height, branchSpacing);
-      const hoverIndexToOffset = computeIndexToOffset(nodes, hoverLayoutConfig);
+      // Use constellation positions for hit testing
+      const hoverIndexToPosition = computeIndexToOffset(nodes, layoutConfig);
       const q = query.trim().toLowerCase();
       const inFilter = (n: Node) => {
         if (!q) return true;
@@ -118,8 +139,9 @@ export function useTimelineInteractions({
       for (let i = 0; i < nodes.length; i++) {
         const node = nodes[i];
         if (mode === 'filter' && q && !inFilter(node)) continue;
-        const nodeWorldX = xScaleYear(yearOf(node.date), hoverLayoutConfig);
-        const nodeWorldY = hoverLayoutConfig.baselineY + (hoverIndexToOffset.get(i) ?? 0);
+        const pos = hoverIndexToPosition.get(i);
+        const nodeWorldX = pos?.x ?? xScaleYear(yearOf(node.date), layoutConfig);
+        const nodeWorldY = pos?.y ?? layoutConfig.baselineY;
         const deltaWorldX = worldX - nodeWorldX;
         const deltaWorldY = worldY - nodeWorldY;
         const distanceSquared = deltaWorldX * deltaWorldX + deltaWorldY * deltaWorldY;
@@ -140,20 +162,29 @@ export function useTimelineInteractions({
     const onMouseUp = () => {
       isPanningRef.current = false;
       if (containerRef.current) containerRef.current.style.cursor = 'default';
+      if (canvas) canvas.style.cursor = 'grab';
       const decay = 0.92;
       const minSpeed = 0.2;
       const step = () => {
-        const { vy } = velocityRef.current;
-        const speed = Math.abs(vy);
+        const { vx, vy } = velocityRef.current;
+        const speed = Math.hypot(vx, vy);
         if (speed < minSpeed) {
           if (momentumRaf.current) cancelAnimationFrame(momentumRaf.current);
           momentumRaf.current = null;
           return;
         }
         const t = transformRef.current;
-        const next = clampTransform({ offsetX: t.offsetX, offsetY: t.offsetY + vy, scale: t.scale }, canvas, height, nodes, branchSpacing);
+        const next = clampTransform(
+          { offsetX: t.offsetX + vx, offsetY: t.offsetY + vy, scale: t.scale },
+          canvas,
+          height,
+          nodes,
+          branchSpacing,
+          layoutConfig,
+          false // Don't force center during momentum scrolling
+        );
         transformRef.current = next;
-        velocityRef.current = { vx: 0, vy: vy * decay };
+        velocityRef.current = { vx: vx * decay, vy: vy * decay };
         redraw();
         momentumRaf.current = requestAnimationFrame(step);
       };
@@ -163,6 +194,7 @@ export function useTimelineInteractions({
     const onMouseLeave = () => {
       isPanningRef.current = false;
       if (containerRef.current) containerRef.current.style.cursor = 'default';
+      if (canvas) canvas.style.cursor = 'default';
       if (hover.nodeIndex !== null) setHover(h => ({ ...h, nodeIndex: null }));
     };
 
@@ -216,7 +248,15 @@ export function useTimelineInteractions({
         centerOnYear(nextYear);
       } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         const dir = e.key === 'ArrowUp' ? 1 : -1;
-        const next = clampTransform({ ...t, offsetY: t.offsetY + dir * step }, canvas, height, nodes, branchSpacing);
+        const next = clampTransform(
+          { ...t, offsetY: t.offsetY + dir * step },
+          canvas,
+          height,
+          nodes,
+          branchSpacing,
+          layoutConfig,
+          false // Don't force center during keyboard navigation
+        );
         transformRef.current = next;
         setTick(v => v + 1);
       } else if (e.key === '+' || e.key === '=') {
