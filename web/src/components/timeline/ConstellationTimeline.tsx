@@ -6,7 +6,7 @@ import { ControlsBar } from './molecules/ControlsBar';
 import { DetailPanel } from './molecules/DetailPanel';
 import { Tooltip } from './molecules/Tooltip';
 import type { Transform, LayoutPoint } from './types';
-import { createLayoutConfig, computeIndexToOffset } from './engine/layout';
+import { createLayoutConfig, computeIndexToOffset, type LayoutConfig } from './engine/layout';
 import { easeInOutQuad, clampTransform } from './engine/transform';
 import { renderTimeline } from './engine/renderer';
 import { useTimelineInteractions } from './hooks/useTimelineInteractions';
@@ -47,6 +47,7 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
     const animate = (ts:number)=>{
       const p = Math.min(1, (ts - startTime)/duration);
       const v = startOffsetX + (desiredOffsetX - startOffsetX) * easeInOutQuad(p);
+      // Temporarily set offsetX for animation, but allow clampTransform to handle centering during zoom
       transformRef.current = { ...transformRef.current, offsetX: v };
       setTick(vv=>vv+1);
       if (p < 1) animRafRef.current = requestAnimationFrame(animate);
@@ -110,9 +111,12 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
     // Update animation time for meteorite
     animationTimeRef.current = performance.now();
 
-    // Horizontal time axis (baseline at 80% = 20% do fundo), vertical branches to avoid collisions per same year
+    // Constellation layout: organic 2D positioning
     const layoutConfig = createLayoutConfig(dataset.nodes, canvas.clientWidth, height, branchSpacing);
-    const indexToOffset = computeIndexToOffset(dataset.nodes, layoutConfig);
+    const indexToPosition = computeIndexToOffset(dataset.nodes, layoutConfig); // Returns Map<number, {x, y}>
+
+    // Don't force center on render - only during zoom interactions
+    // This allows centerOnYear animation to work smoothly
 
     renderTimeline({
       ctx,
@@ -120,7 +124,7 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
       height,
       transform: transformRef.current,
       layoutConfig,
-      indexToOffset,
+      indexToPosition,
       nodes: dataset.nodes,
       edges: dataset.edges,
       query,
@@ -174,15 +178,18 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
 
         // Recompute layout with new dimensions
         const layoutConfig = createLayoutConfig(dataset.nodes, canvas.clientWidth, height, branchSpacing);
-        const indexToOffset = computeIndexToOffset(dataset.nodes, layoutConfig);
+        const indexToPosition = computeIndexToOffset(dataset.nodes, layoutConfig);
 
-        // Re-clamp transform to new bounds (baseline always at 80% = 20% do fundo)
+        // Re-clamp transform to new bounds (baseline always at 70% = 30% do fundo)
+        // Force center horizontally on resize to maintain view
         transformRef.current = clampTransform(
           transformRef.current,
           canvas,
           height,
           dataset.nodes,
-          branchSpacing
+          branchSpacing,
+          layoutConfig,
+          true // Force center on resize
         );
 
         renderTimeline({
@@ -191,7 +198,7 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
           height,
           transform: transformRef.current,
           layoutConfig,
-          indexToOffset,
+          indexToPosition: indexToPosition,
           nodes: dataset.nodes,
           edges: dataset.edges,
           query,
@@ -212,7 +219,17 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
     };
   }, [height, query, mode, selectedIndex, showConstellations, branchSpacing]);
 
-  // Use interactions hook
+  // Compute layout config for interactions (needs canvas width, computed in render)
+  const [currentLayoutConfig, setCurrentLayoutConfig] = useState<LayoutConfig | null>(null);
+  
+  // Update layout config when dimensions change
+  useEffect(() => {
+    if (ref.current) {
+      const config = createLayoutConfig(dataset.nodes, ref.current.clientWidth, height, branchSpacing);
+      setCurrentLayoutConfig(config);
+    }
+  }, [height, branchSpacing]);
+
   useTimelineInteractions({
     canvasRef: ref,
     containerRef,
@@ -232,6 +249,7 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
     setDeepLink,
     centerOnYear,
     hover,
+    layoutConfig: currentLayoutConfig || createLayoutConfig(dataset.nodes, 800, height, branchSpacing), // Fallback
   });
 
   return (
@@ -242,7 +260,7 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
       tabIndex={0}
       aria-label="Constellation timeline canvas"
     >
-      <canvas ref={ref} style={{ width: '100%', height }} />
+      <canvas ref={ref} style={{ width: '100%', height, cursor: 'grab' }} />
       <ControlsBar
         onPrevYear={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))}
         onNextYear={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))}
