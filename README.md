@@ -26,6 +26,8 @@ jpfigueredo.github.io/
 │   ├── ui/               # Reusable UI components
 │   └── config/           # Shared configurations
 ├── services/             # Backend services
+│   ├── rust-api/        # Rust REST API (Axum + OpenAPI)
+│   ├── bff-api/         # Node.js BFF API
 │   └── edge-proxy/       # Cloudflare Worker proxy
 └── .github/workflows/    # CI/CD pipelines
 ```
