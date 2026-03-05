@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: jpfig-bff-api
+    runtime: node
+    region: ohio
+    plan: free
+    buildCommand: cd services/bff-api && npm install
+    startCommand: cd services/bff-api && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+    healthCheckPath: /health
+    autoDeploy: false
