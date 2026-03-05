@@ -1,0 +1,16 @@
+name: Deploy Rust API to Render
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/rust-api/**'
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy
+        run: |
+          curl -f -X POST "${{ secrets.RENDER_RUST_HOOK }}"
