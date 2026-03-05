@@ -1,11 +1,17 @@
 {
   "name": "@jpfig/config",
-  "version": "0.0.0",
+  "version": "1.0.0-beta.1",
   "private": true,
-  "exports": {
-    "./eslint": "./eslint.cjs",
-    "./prettier": "./prettier.cjs",
-    "./tsconfig": "./tsconfig.json",
-    "./tsconfig/react-library": "./tsconfig/react-library.json"
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -w -p tsconfig.json",
+    "lint": "echo skip",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
   }
 }
