@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: jpfig-rust-api
+    runtime: docker
+    region: ohio
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: RUST_LOG
+        value: info
+      - key: PORT
+        value: "8080"
+    healthCheckPath: /health
+    autoDeploy: false
