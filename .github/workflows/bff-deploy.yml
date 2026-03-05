@@ -1,0 +1,16 @@
+name: Deploy BFF API to Render
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/bff-api/**'
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy
+        run: |
+          curl -f -X POST "${{ secrets.RENDER_BFF_HOOK }}"

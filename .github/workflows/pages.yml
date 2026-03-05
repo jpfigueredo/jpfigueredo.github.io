@@ -2,7 +2,8 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
+    tags: ['v*']
   workflow_dispatch: {}
 
 permissions:
@@ -23,17 +24,31 @@ jobs:
           cache: 'yarn'
       - name: Install deps
         run: yarn install --frozen-lockfile
+      - name: Install Angular deps
+        run: cd apps/angular-demo && npm install
       - name: Build
         run: yarn build
       - name: Compose Pages artifact
         run: |
           mkdir -p .pages
+          # Copy web dist (main site) - this is the root
           cp -r web/dist/* .pages/
+          # Create apps directory for sub-apps
           mkdir -p .pages/apps
-          # Publish subapps static outputs
-          cp -r apps/* .pages/apps/
+          # Copy sub-apps if they exist
+          if [ -d "apps" ] && [ "$(ls -A apps 2>/dev/null)" ]; then
+            for app_dir in apps/*/; do
+              if [ -d "${app_dir}dist" ]; then
+                app_name=$(basename "${app_dir}")
+                mkdir -p ".pages/apps/${app_name}"
+                cp -r "${app_dir}dist"/* ".pages/apps/${app_name}/" || true
+              fi
+            done
+          fi
           # Add SPA routing support (404.html = index.html for client-side routing)
-          cp .pages/index.html .pages/404.html
+          if [ -f ".pages/index.html" ]; then
+            cp .pages/index.html .pages/404.html
+          fi
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
