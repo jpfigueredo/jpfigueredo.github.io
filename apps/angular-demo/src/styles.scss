@@ -1,0 +1,26 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* DS tokens from packages/ui */
+:root {
+  --ds-bg-deep: #070a12;
+  --ds-bg-space: #0a0f1d;
+  --ds-bg-card: rgba(15, 23, 42, 0.9);
+  --ds-neon: #00e5ff;
+  --ds-magenta: #ff00e6;
+  --ds-text-primary: #e2e8f0;
+  --ds-text-secondary: #9ca3af;
+  --ds-border-neon: rgba(0, 229, 255, 0.35);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--ds-bg-deep);
+  color: var(--ds-text-primary);
+  font-family: 'Inter', system-ui, sans-serif;
+  min-height: 100vh;
+}
