@@ -1,0 +1,24 @@
+/*
+ * @jpfig Design System – CSS Custom Properties
+ * Importar: import '@jpfig/ui/src/tokens.css';
+ * (equivalente ao tokens.scss mas para uso em JS/CSS puro)
+ */
+:root {
+  /* Backgrounds */
+  --ds-bg-deep:     #070a12;
+  --ds-bg-space:    #0a0f1d;
+  --ds-bg-card:     rgba(15, 23, 42, 0.9);
+
+  /* Texto */
+  --ds-text-primary:   #e2e8f0;
+  --ds-text-secondary: #9ca3af;
+  --ds-text-muted:     #94a3b8;
+
+  /* Accents */
+  --ds-neon:     #00e5ff;
+  --ds-magenta:  #ff00e6;
+  --ds-neon-sky: #38bdf8;
+
+  /* Semânticos */
+  --ds-marxist:  #f9a8d4;
+}

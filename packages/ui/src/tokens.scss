@@ -1,0 +1,69 @@
+// ============================================================
+// @jpfig Design System – Tokens SCSS
+// Uso: @use '@jpfig/ui/src/tokens' as ds;
+//      ou, com loadPaths configurado no Vite: @use 'tokens' as ds;
+// ============================================================
+
+// --- Paleta de cores -----------------------------------------
+
+// Backgrounds (escuro espacial)
+$color-bg-deep:     #070a12;
+$color-bg-space:    #0a0f1d;
+$color-bg-card:     rgba(15, 23, 42, 0.9);
+$color-bg-card-alt: rgba(8, 47, 73, 0.95);
+$color-bg-selected: #4c1d95;
+
+// Bordas
+$color-border:        rgba(30, 64, 175, 0.4);
+$color-border-subtle: rgba(148, 163, 184, 0.25);
+$color-border-neon:   rgba(56, 189, 248, 0.9);
+$color-border-neon-dim: rgba(56, 189, 248, 0.3);
+$color-border-magenta: rgba(244, 114, 182, 0.9);
+
+// Texto
+$color-text-primary:   #e2e8f0;
+$color-text-secondary: #9ca3af;
+$color-text-muted:     #94a3b8;
+
+// Accents
+$color-neon:       #00e5ff;
+$color-neon-sky:   #38bdf8;
+$color-magenta:    #ff00e6;
+
+// Semânticos
+$color-marxist:    #f9a8d4;   // rosa claro – análise marxista
+
+// --- Sombras ---------------------------------------------------
+
+$shadow-card:     0 18px 45px rgba(15, 23, 42, 0.9);
+$shadow-neon:     0 0 0 1px #{$color-border-neon}, 0 10px 30px rgba(15, 23, 42, 0.9);
+$shadow-selected: 0 0 0 1px #{$color-border-magenta}, 0 14px 40px rgba(24, 24, 27, 0.95);
+$shadow-glow-neon: 0 0 12px rgba(0, 229, 255, 0.8);
+
+// --- Tipografia ------------------------------------------------
+
+$font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+$font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+// --- Espaçamento (escala 8pt) -----------------------------------
+
+$space-1: 0.25rem;   //  4px
+$space-2: 0.5rem;    //  8px
+$space-3: 0.75rem;   // 12px
+$space-4: 1rem;      // 16px
+$space-5: 1.25rem;   // 20px
+$space-6: 1.5rem;    // 24px
+$space-7: 1.75rem;   // 28px
+$space-8: 2rem;      // 32px
+
+// --- Raios de borda --------------------------------------------
+
+$radius-sm:   0.375rem;
+$radius-md:   0.75rem;
+$radius-pill: 999px;
+
+// --- Transições ------------------------------------------------
+
+$transition-fast: 160ms ease;
+$transition-base: 200ms ease;
+$transition-slow: 300ms ease-in-out;
