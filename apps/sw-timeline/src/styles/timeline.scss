@@ -1,0 +1,253 @@
+@use 'tokens' as ds;
+
+// --- Timeline Axis (horizontal scroll) -----------------------
+
+.sw-axis {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  // Scrollbar temática
+  scrollbar-width: thin;
+  scrollbar-color: ds.$color-border ds.$color-bg-card;
+
+  &::-webkit-scrollbar { height: 6px; }
+  &::-webkit-scrollbar-track { background: ds.$color-bg-card; }
+  &::-webkit-scrollbar-thumb { background: ds.$color-border; border-radius: ds.$radius-pill; }
+  &::-webkit-scrollbar-thumb:hover { background: ds.$color-border-neon-dim; }
+}
+
+.sw-axis__track {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: ds.$space-8;
+  padding: ds.$space-4 ds.$space-5 ds.$space-6;
+  min-width: max-content;
+
+  // Trilho horizontal
+  &::before {
+    content: '';
+    position: absolute;
+    left: ds.$space-5;
+    right: ds.$space-5;
+    top: calc(ds.$space-4 + 2.5rem); // alinha ao centro dos marcadores de ano
+    height: 1px;
+    background: linear-gradient(
+      to right,
+      transparent,
+      ds.$color-border-neon-dim 8%,
+      ds.$color-border 50%,
+      ds.$color-border-neon-dim 92%,
+      transparent
+    );
+    pointer-events: none;
+  }
+}
+
+.sw-axis__year-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: ds.$space-4;
+  min-width: 130px;
+}
+
+.sw-axis__year-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: ds.$space-1;
+  position: relative;
+  z-index: 1;
+}
+
+.sw-axis__year-tick {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: ds.$color-neon-sky;
+  box-shadow: 0 0 6px ds.$color-border-neon;
+  flex-shrink: 0;
+}
+
+.sw-axis__year-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: ds.$color-neon-sky;
+  letter-spacing: 0.04em;
+}
+
+.sw-axis__events-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: ds.$space-2;
+}
+
+.sw-axis__event-dot {
+  position: relative;
+  border-radius: ds.$radius-pill;
+  padding: ds.$space-1 ds.$space-3;
+  border: 1px solid ds.$color-border-neon-dim;
+  background: radial-gradient(circle at top left, ds.$color-bg-card-alt, ds.$color-bg-card);
+  color: ds.$color-text-primary;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition:
+    border-color ds.$transition-fast,
+    transform ds.$transition-fast,
+    box-shadow ds.$transition-fast,
+    background ds.$transition-fast;
+
+  &:focus-visible {
+    outline: 2px solid ds.$color-neon;
+    outline-offset: 2px;
+  }
+}
+
+.sw-axis__event-dot:hover {
+  border-color: ds.$color-border-neon;
+  box-shadow: ds.$shadow-neon;
+  transform: translateY(-1px);
+}
+
+.sw-axis__event-dot--selected {
+  border-color: ds.$color-border-magenta;
+  box-shadow: ds.$shadow-selected;
+  background: radial-gradient(circle at top left, ds.$color-bg-selected, #111827);
+}
+
+.sw-axis__event-title {
+  white-space: nowrap;
+}
+
+// --- Filters Bar ---------------------------------------------
+
+.sw-filters {
+  display: flex;
+  flex-direction: column;
+  gap: ds.$space-2;
+}
+
+.sw-filters__title {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.sw-filters__hint {
+  font-size: 0.75rem;
+  color: ds.$color-text-secondary;
+}
+
+.sw-filters__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: ds.$space-1;
+}
+
+.sw-filters__tag {
+  padding: ds.$space-1 ds.$space-3;
+  border-radius: ds.$radius-pill;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  background: ds.$color-bg-card;
+  color: ds.$color-text-primary;
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition:
+    background ds.$transition-fast,
+    border-color ds.$transition-fast,
+    color ds.$transition-fast;
+}
+
+.sw-filters__tag--active {
+  border-color: ds.$color-border-neon;
+  background: radial-gradient(circle at top left, #0369a1, ds.$color-bg-space);
+}
+
+// --- Event Details Panel -------------------------------------
+
+.sw-details {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: ds.$space-3;
+}
+
+.sw-details--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: ds.$color-text-secondary;
+  font-size: 0.8rem;
+}
+
+.sw-details__title {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.sw-details__year {
+  margin-left: ds.$space-1;
+  font-size: 0.8rem;
+  color: ds.$color-text-secondary;
+}
+
+.sw-details__summary {
+  font-size: 0.8rem;
+  color: ds.$color-text-primary;
+}
+
+.sw-details__marxist {
+  font-size: 0.8rem;
+  color: ds.$color-marxist;
+}
+
+.sw-details__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: ds.$space-1;
+}
+
+.sw-details__tag {
+  font-size: 0.65rem;
+  padding: 2px ds.$space-2;
+  border-radius: ds.$radius-pill;
+  border: 1px solid ds.$color-border-neon-dim;
+  color: ds.$color-neon-sky;
+  background: rgba(56, 189, 248, 0.08);
+  letter-spacing: 0.03em;
+}
+
+.sw-details__section {
+  margin-top: ds.$space-1;
+}
+
+.sw-details__section h3 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: ds.$space-1;
+}
+
+.sw-details__sources {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.sw-details__sources li + li {
+  margin-top: 0.2rem;
+}
+
+.sw-details__sources a {
+  font-size: 0.75rem;
+  color: ds.$color-neon-sky;
+  text-decoration: none;
+}
+
+.sw-details__sources a:hover {
+  text-decoration: underline;
+}

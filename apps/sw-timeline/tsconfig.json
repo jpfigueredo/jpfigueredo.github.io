@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "noEmit": true,
+    "paths": {
+      "@jpfig/config": ["../../packages/config/src"]
+    }
+  },
+  "include": ["src", "vite-env.d.ts"]
+}
+
