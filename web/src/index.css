@@ -2,23 +2,44 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── @jpfig Design System tokens ───────────────────────────── */
 :root {
-  --bg-space: #070a12;   /* darker */
-  --bg-space2: #0a0f1d;  /* darker */
-  --accent-neon: #00e5ff;
-  --accent-magenta: #ff00e6;
+  /* Backgrounds */
+  --ds-bg-deep:   #070a12;
+  --ds-bg-space:  #0a0f1d;
+  --ds-bg-card:   rgba(15, 23, 42, 0.9);
+
+  /* Texto */
+  --ds-text-primary:   #e2e8f0;
+  --ds-text-secondary: #9ca3af;
+  --ds-text-muted:     #94a3b8;
+
+  /* Accents */
+  --ds-neon:     #00e5ff;
+  --ds-magenta:  #ff00e6;
+  --ds-neon-sky: #38bdf8;
+
+  /* Semânticos */
+  --ds-marxist:  #f9a8d4;
+
+  /* Aliases legados (mantidos para compatibilidade com Tailwind config) */
+  --bg-space:       var(--ds-bg-deep);
+  --bg-space2:      var(--ds-bg-space);
+  --accent-neon:    var(--ds-neon);
+  --accent-magenta: var(--ds-magenta);
 }
 
-body { 
-  background: linear-gradient(180deg, var(--bg-space), var(--bg-space2)); 
-  color: #e2e8f0; 
+/* ── Base ───────────────────────────────────────────────────── */
+body {
+  background: linear-gradient(180deg, var(--ds-bg-deep), var(--ds-bg-space));
+  color: var(--ds-text-primary);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
 }
 
-/* Mobile-first touch improvements */
+/* ── Mobile-first ───────────────────────────────────────────── */
 * {
   -webkit-tap-highlight-color: transparent;
 }
@@ -28,59 +49,41 @@ button, a {
   -webkit-touch-callout: none;
 }
 
-/* Prevent text selection on buttons */
 button {
   user-select: none;
   -webkit-user-select: none;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-}
+/* ── Scrollbar ──────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 8px; }
 
-::-webkit-scrollbar-track {
-  background: #1e293b;
-}
+::-webkit-scrollbar-track { background: #1e293b; }
 
 ::-webkit-scrollbar-thumb {
   background: #475569;
   border-radius: 4px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
-}
+::-webkit-scrollbar-thumb:hover { background: #64748b; }
 
-/* Neon glow effects */
-.neon-glow {
-  box-shadow: 0 0 20px rgba(0, 240, 255, 0.3);
-}
+/* ── Glow utilities ─────────────────────────────────────────── */
+.neon-glow    { box-shadow: 0 0 20px rgba(0, 229, 255, 0.3); }
+.magenta-glow { box-shadow: 0 0 20px rgba(255, 0, 230, 0.3); }
 
-.magenta-glow {
-  box-shadow: 0 0 20px rgba(255, 0, 230, 0.3);
-}
+/* ── Transitions ────────────────────────────────────────────── */
+* { transition: all 0.2s ease-in-out; }
 
-/* Smooth transitions */
-* {
-  transition: all 0.2s ease-in-out;
-}
-
-/* Custom animations */
+/* ── Animations ─────────────────────────────────────────────── */
 @keyframes float {
   0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
+  50%       { transform: translateY(-10px); }
 }
 
-.float-animation {
-  animation: float 3s ease-in-out infinite;
-}
+.float-animation { animation: float 3s ease-in-out infinite; }
 
 @keyframes pulse-neon {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
+  50%       { opacity: 0.7; }
 }
 
-.pulse-neon {
-  animation: pulse-neon 2s ease-in-out infinite;
-}
+.pulse-neon { animation: pulse-neon 2s ease-in-out infinite; }
