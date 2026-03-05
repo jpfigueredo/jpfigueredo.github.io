@@ -44,9 +44,9 @@ export function clampTransform(
     // Otherwise allow free horizontal movement
   }
 
-  // === VERTICAL CLAMPING: Keep within scene bounds ===
-  // Calculate bounds from constellation layout (2D, organic spread)
-  const baselineY = height * 0.7;
+        // === VERTICAL CLAMPING: Keep within scene bounds ===
+        // Calculate bounds from constellation layout (2D, organic spread)
+        const baselineY = height * 0.80;
   
   // Estimate bounds: for nodes in same year, max spread is branchSpacing * count
   // Constellation layout spreads organically (spiral pattern), estimate bounds

@@ -8,11 +8,13 @@ import { Tooltip } from './molecules/Tooltip';
 import type { Transform, LayoutPoint } from './types';
 import { createLayoutConfig, computeIndexToOffset, type LayoutConfig } from './engine/layout';
 import { easeInOutQuad, clampTransform } from './engine/transform';
-import { renderTimeline } from './engine/renderer';
+import { TimelineThreeRenderer } from './engine/three-renderer';
+import { renderTimelineThree, clearTimelineCache } from './engine/render-three';
 import { useTimelineInteractions } from './hooks/useTimelineInteractions';
 
 export const ConstellationTimeline: React.FC<{ height?: number; query?: string; mode?: SearchMode }>= ({ height = 600, query = '', mode = 'highlight' }) => {
   const ref = useRef<HTMLCanvasElement | null>(null);
+  const threeRendererRef = useRef<TimelineThreeRenderer | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   // pan/zoom state
@@ -28,6 +30,10 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
   const yearsSorted = React.useMemo(() => uniqueSortedYears(dataset.nodes), []);
   const centerDebounceRef = useRef<number | null>(null);
   const animationTimeRef = useRef<number>(0); // For animated meteorite
+  
+  // On-demand rendering: only animate when needed
+  const [isAnimating, setIsAnimating] = useState(false);
+  const animationTimeoutRef = useRef<number | null>(null);
 
   // helper: smooth-center on a given year
   const centerOnYear = (year: number) => {
@@ -94,32 +100,60 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
     history.replaceState(null, '', `${base}#sw-node=${encodeURIComponent(id)}`);
   };
 
-  // Render function
-  const renderCanvas = React.useCallback(() => {
+  // Initialize Three.js renderer
+  useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    
+    if (!threeRendererRef.current) {
+      threeRendererRef.current = new TimelineThreeRenderer(canvas, canvas.clientWidth, height);
+      
+      // Load NASA background asynchronously (composited over procedural)
+      setTimeout(() => {
+        if (threeRendererRef.current) {
+          threeRendererRef.current.loadNASABackground(canvas.clientWidth, height).catch((err: unknown) => {
+            console.warn('NASA background load failed, using procedural texture:', err);
+          });
+        }
+      }, 500);
+    }
+    
+    return () => {
+      if (threeRendererRef.current) {
+        threeRendererRef.current.dispose();
+        threeRendererRef.current = null;
+        clearTimelineCache(); // Clear object cache on unmount
+      }
+    };
+  }, [height]);
 
-    const dpr = window.devicePixelRatio || 1;
-    const width = canvas.clientWidth * dpr;
-    const heightPx = height * dpr;
-    canvas.width = width;
-    canvas.height = heightPx;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // Render function (Three.js) - on-demand rendering
+  const renderCanvas = React.useCallback(() => {
+    const canvas = ref.current;
+    const threeRenderer = threeRendererRef.current;
+    if (!canvas || !threeRenderer) return;
 
-    // Update animation time for meteorite
-    animationTimeRef.current = performance.now();
+    // Update animation time only if animating
+    if (isAnimating) {
+      animationTimeRef.current = performance.now();
+    }
 
     // Constellation layout: organic 2D positioning
     const layoutConfig = createLayoutConfig(dataset.nodes, canvas.clientWidth, height, branchSpacing);
-    const indexToPosition = computeIndexToOffset(dataset.nodes, layoutConfig); // Returns Map<number, {x, y}>
+    const indexToPosition = computeIndexToOffset(dataset.nodes, layoutConfig);
 
-    // Don't force center on render - only during zoom interactions
-    // This allows centerOnYear animation to work smoothly
+    // Update layout points for hit testing
+    layoutRef.current = [];
+    dataset.nodes.forEach((node, i) => {
+      const pos = indexToPosition.get(i);
+      if (pos) {
+        layoutRef.current.push({ x: pos.x, y: pos.y, index: i });
+      }
+    });
 
-    renderTimeline({
-      ctx,
+    // Render with Three.js
+    renderTimelineThree({
+      renderer: threeRenderer,
       canvasWidth: canvas.clientWidth,
       height,
       transform: transformRef.current,
@@ -131,57 +165,93 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
       mode,
       showConstellations,
       selectedIndex,
-      layoutPoints: layoutRef.current,
       animationTime: animationTimeRef.current,
     });
-  }, [height, query, mode, tick, selectedIndex, showConstellations, branchSpacing]);
+  }, [height, query, mode, tick, selectedIndex, showConstellations, branchSpacing, isAnimating]);
 
-  // Initial render and on dependencies change
+  // On-demand rendering: only render when needed (not continuously)
+  // This prevents constant rendering and improves performance
+  const needsRenderRef = useRef(true);
+  
+  // Trigger render when dependencies change
   useEffect(() => {
-    renderCanvas();
+    needsRenderRef.current = true;
+    // Use requestAnimationFrame for next frame (non-blocking)
+    const rafId = requestAnimationFrame(() => {
+      if (needsRenderRef.current) {
+        renderCanvas();
+        needsRenderRef.current = false;
+      }
+    });
+    return () => cancelAnimationFrame(rafId);
   }, [renderCanvas]);
 
-  // Animation loop for meteorite particles
+  // Animation for comet particles - only when animating flag is true
   useEffect(() => {
+    if (!isAnimating) return;
+    
     let rafId: number;
-    const animate = () => {
-      animationTimeRef.current = performance.now();
-      setTick(t => t + 1); // Trigger re-render
+    let lastFrameTime = 0;
+    const targetFPS = 30; // Reduced from 60 for better performance
+    const frameInterval = 1000 / targetFPS;
+    
+    const animate = (currentTime: number) => {
+      if (!isAnimating) {
+        cancelAnimationFrame(rafId);
+        return;
+      }
+      
+      // Throttle to target FPS
+      if (currentTime - lastFrameTime >= frameInterval) {
+        animationTimeRef.current = currentTime;
+        needsRenderRef.current = true; // Mark as needing render
+        renderCanvas(); // Render directly
+        lastFrameTime = currentTime;
+      }
       rafId = requestAnimationFrame(animate);
     };
     rafId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(rafId);
-  }, []);
+    
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [isAnimating, renderCanvas]);
+  
+  // Auto-start/stop animation based on interactions
+  // Animation starts on any change and stops after 1.5 seconds of inactivity
+  useEffect(() => {
+    setIsAnimating(true); // Start animation when component mounts or state changes
+    
+    // Stop animation after 1.5 seconds of inactivity
+    if (animationTimeoutRef.current) {
+      clearTimeout(animationTimeoutRef.current);
+    }
+    animationTimeoutRef.current = window.setTimeout(() => {
+      setIsAnimating(false);
+    }, 1500); // Reduced from 2000ms for faster stop
+    
+    return () => {
+      if (animationTimeoutRef.current) {
+        clearTimeout(animationTimeoutRef.current);
+      }
+    };
+  }, [tick, selectedIndex, query, mode, showConstellations, branchSpacing]);
 
-  // Resize handler - render immediately for responsive behavior (debounced but responsive)
+  // Resize handler - render immediately for responsive behavior
   useEffect(() => {
     let resizeTimeout: number | null = null;
     const handleResize = () => {
-      // Cancel any pending resize
       if (resizeTimeout) window.cancelAnimationFrame(resizeTimeout);
-      // Force immediate render on resize
       resizeTimeout = requestAnimationFrame(() => {
         const canvas = ref.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        const threeRenderer = threeRendererRef.current;
+        if (!canvas || !threeRenderer) return;
 
-        const dpr = window.devicePixelRatio || 1;
-        const width = canvas.clientWidth * dpr;
-        const heightPx = height * dpr;
-        canvas.width = width;
-        canvas.height = heightPx;
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        // Resize Three.js renderer
+        threeRenderer.resize(canvas.clientWidth, height);
 
-        // Update animation time
-        animationTimeRef.current = performance.now();
-
-        // Recompute layout with new dimensions
+        // Re-clamp transform to new bounds
         const layoutConfig = createLayoutConfig(dataset.nodes, canvas.clientWidth, height, branchSpacing);
-        const indexToPosition = computeIndexToOffset(dataset.nodes, layoutConfig);
-
-        // Re-clamp transform to new bounds (baseline always at 70% = 30% do fundo)
-        // Force center horizontally on resize to maintain view
         transformRef.current = clampTransform(
           transformRef.current,
           canvas,
@@ -192,22 +262,8 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
           true // Force center on resize
         );
 
-        renderTimeline({
-          ctx,
-          canvasWidth: canvas.clientWidth,
-          height,
-          transform: transformRef.current,
-          layoutConfig,
-          indexToPosition: indexToPosition,
-          nodes: dataset.nodes,
-          edges: dataset.edges,
-          query,
-          mode,
-          showConstellations,
-          selectedIndex,
-          layoutPoints: layoutRef.current,
-          animationTime: animationTimeRef.current,
-        });
+        // Trigger re-render
+        setTick(t => t + 1);
         resizeTimeout = null;
       });
     };
@@ -217,7 +273,7 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
       window.removeEventListener('resize', handleResize);
       if (resizeTimeout) window.cancelAnimationFrame(resizeTimeout);
     };
-  }, [height, query, mode, selectedIndex, showConstellations, branchSpacing]);
+  }, [height, branchSpacing]);
 
   // Compute layout config for interactions (needs canvas width, computed in render)
   const [currentLayoutConfig, setCurrentLayoutConfig] = useState<LayoutConfig | null>(null);
@@ -249,7 +305,8 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
     setDeepLink,
     centerOnYear,
     hover,
-    layoutConfig: currentLayoutConfig || createLayoutConfig(dataset.nodes, 800, height, branchSpacing), // Fallback
+    layoutConfig: currentLayoutConfig || createLayoutConfig(dataset.nodes, 800, height, branchSpacing),
+    threeRendererRef,
   });
 
   return (
@@ -260,7 +317,11 @@ export const ConstellationTimeline: React.FC<{ height?: number; query?: string; 
       tabIndex={0}
       aria-label="Constellation timeline canvas"
     >
-      <canvas ref={ref} style={{ width: '100%', height, cursor: 'grab' }} />
+      <canvas 
+        ref={ref} 
+        style={{ width: '100%', height, cursor: 'grab', pointerEvents: 'auto', position: 'relative', zIndex: 1 }}
+        tabIndex={-1}
+      />
       <ControlsBar
         onPrevYear={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))}
         onNextYear={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))}

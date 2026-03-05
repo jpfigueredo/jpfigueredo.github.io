@@ -4,6 +4,8 @@ import type { SearchMode } from '../SearchBar';
 import { yearOf } from '../utils';
 import { clampTransform } from '../engine/transform';
 import { createLayoutConfig, computeIndexToOffset, xScaleYear, type LayoutConfig } from '../engine/layout';
+import { getNodeAtPosition } from '../engine/three-scene-optimized';
+import type { TimelineThreeRenderer } from '../engine/three-renderer';
 
 type HoverState = { screenX: number; screenY: number; nodeIndex: number | null };
 
@@ -26,7 +28,8 @@ type UseTimelineInteractionsOptions = {
   setDeepLink: (index: number) => void;
   centerOnYear: (year: number) => void;
   hover: HoverState;
-  layoutConfig: LayoutConfig; // Pass layoutConfig for proper centering
+  layoutConfig: LayoutConfig;
+  threeRendererRef: React.RefObject<TimelineThreeRenderer | null>; // Three.js renderer for hit testing
 };
 
 export function useTimelineInteractions({
@@ -49,6 +52,7 @@ export function useTimelineInteractions({
   centerOnYear,
   hover,
   layoutConfig,
+  threeRendererRef,
 }: UseTimelineInteractionsOptions) {
   const isPanningRef = useRef(false);
   const lastMousePosRef = useRef<{ screenX: number; screenY: number }>({ screenX: 0, screenY: 0 });
@@ -89,6 +93,21 @@ export function useTimelineInteractions({
     };
 
     const onMouseDown = (e: MouseEvent) => {
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const mouseScreenX = e.clientX - rect.left;
+      const mouseScreenY = e.clientY - rect.top;
+      
+      // Check if clicking on a node first (prevent pan if clicking node)
+      const threeRenderer = threeRendererRef.current;
+      if (threeRenderer) {
+        const nodeIndex = getNodeAtPosition(threeRenderer, mouseScreenX, mouseScreenY, canvas.clientWidth, height);
+        if (nodeIndex !== null) {
+          // Don't start panning if clicking on a node - let onClick handle it
+          return;
+        }
+      }
+      
       isPanningRef.current = true;
       lastMousePosRef.current = { screenX: e.clientX, screenY: e.clientY };
       if (containerRef.current) containerRef.current.style.cursor = 'grab';
@@ -121,41 +140,22 @@ export function useTimelineInteractions({
         return;
       }
 
-      // Hover hit test: convert screen coordinates to world coordinates
-      const transform = transformRef.current;
-      const worldX = (mouseScreenX - transform.offsetX) / transform.scale;
-      const worldY = (mouseScreenY - transform.offsetY) / transform.scale;
-
-      // Use constellation positions for hit testing
-      const hoverIndexToPosition = computeIndexToOffset(nodes, layoutConfig);
-      const q = query.trim().toLowerCase();
-      const inFilter = (n: Node) => {
-        if (!q) return true;
-        const text = `${n.label} ${(n.tags ?? []).join(' ')}`.toLowerCase();
-        return text.includes(q);
-      };
-
-      let foundNodeIndex: number | null = null;
-      for (let i = 0; i < nodes.length; i++) {
-        const node = nodes[i];
-        if (mode === 'filter' && q && !inFilter(node)) continue;
-        const pos = hoverIndexToPosition.get(i);
-        const nodeWorldX = pos?.x ?? xScaleYear(yearOf(node.date), layoutConfig);
-        const nodeWorldY = pos?.y ?? layoutConfig.baselineY;
-        const deltaWorldX = worldX - nodeWorldX;
-        const deltaWorldY = worldY - nodeWorldY;
-        const distanceSquared = deltaWorldX * deltaWorldX + deltaWorldY * deltaWorldY;
-        const hitRadiusSquared = 9 * 9; // 9 world units radius
-        if (distanceSquared <= hitRadiusSquared) {
-          foundNodeIndex = i;
-          break;
+      // Hover hit test: use Three.js Raycaster
+      const threeRenderer = threeRendererRef.current;
+      if (threeRenderer) {
+        const foundNodeIndex = getNodeAtPosition(
+          threeRenderer,
+          mouseScreenX,
+          mouseScreenY,
+          canvas.clientWidth,
+          height
+        );
+        
+        if (foundNodeIndex !== null) {
+          setHover({ screenX: mouseScreenX + 12, screenY: mouseScreenY + 12, nodeIndex: foundNodeIndex });
+        } else if (hover.nodeIndex !== null) {
+          setHover(h => ({ ...h, nodeIndex: null }));
         }
-      }
-
-      if (foundNodeIndex !== null) {
-        setHover({ screenX: mouseScreenX + 12, screenY: mouseScreenY + 12, nodeIndex: foundNodeIndex });
-      } else if (hover.nodeIndex !== null) {
-        setHover(h => ({ ...h, nodeIndex: null }));
       }
     };
 
@@ -200,37 +200,46 @@ export function useTimelineInteractions({
 
     const onClick = (e: MouseEvent) => {
       if (!canvas) return;
+      
+      // Prevent click if user was panning (moved mouse significantly)
+      if (isPanningRef.current) {
+        isPanningRef.current = false;
+        return;
+      }
+      
       const rect = canvas.getBoundingClientRect();
       const mouseScreenX = e.clientX - rect.left;
       const mouseScreenY = e.clientY - rect.top;
-      const transform = transformRef.current;
-      const worldX = (mouseScreenX - transform.offsetX) / transform.scale;
-      const worldY = (mouseScreenY - transform.offsetY) / transform.scale;
-      let clickedNodeIndex: number | null = null;
-      let bestDistanceSquared = Infinity;
-      const clickRadiusSquared = 12 * 12; // 12 world units radius
-      for (const layoutPoint of layoutRef.current) {
-        const deltaWorldX = worldX - layoutPoint.x;
-        const deltaWorldY = worldY - layoutPoint.y;
-        const distanceSquared = deltaWorldX * deltaWorldX + deltaWorldY * deltaWorldY;
-        if (distanceSquared < clickRadiusSquared && distanceSquared < bestDistanceSquared) {
-          bestDistanceSquared = distanceSquared;
-          clickedNodeIndex = layoutPoint.index;
-        }
-      }
-      // Ctrl/Cmd+Click opens source link directly
-      if (clickedNodeIndex !== null && (e.ctrlKey || e.metaKey)) {
-        const clickedNode = nodes[clickedNodeIndex];
-        const firstSource = clickedNode.sources && clickedNode.sources[0];
-        if (firstSource) window.open(firstSource, '_blank');
-        return;
-      }
-      setSelectedIndex(clickedNodeIndex);
-      if (clickedNodeIndex !== null) {
-        setDeepLink(clickedNodeIndex);
-        const selectedYear = yearOf(nodes[clickedNodeIndex].date);
-        setFocusYear(selectedYear);
-        centerOnYear(selectedYear);
+      
+      // Use Three.js Raycaster for hit testing
+      const threeRenderer = threeRendererRef.current;
+      if (threeRenderer) {
+        // Small delay to ensure scene is rendered
+        requestAnimationFrame(() => {
+          const clickedNodeIndex = getNodeAtPosition(
+            threeRenderer,
+            mouseScreenX,
+            mouseScreenY,
+            canvas!.clientWidth,
+            height
+          );
+          
+          // Ctrl/Cmd+Click opens source link directly
+          if (clickedNodeIndex !== null && (e.ctrlKey || e.metaKey)) {
+            const clickedNode = nodes[clickedNodeIndex];
+            const firstSource = clickedNode.sources && clickedNode.sources[0];
+            if (firstSource) window.open(firstSource, '_blank');
+            return;
+          }
+          
+          setSelectedIndex(clickedNodeIndex);
+          if (clickedNodeIndex !== null) {
+            setDeepLink(clickedNodeIndex);
+            const selectedYear = yearOf(nodes[clickedNodeIndex].date);
+            setFocusYear(selectedYear);
+            centerOnYear(selectedYear);
+          }
+        });
       }
     };
 

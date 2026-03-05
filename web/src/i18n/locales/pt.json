@@ -1,0 +1,115 @@
+{
+  "header": {
+    "title": "João Figueredo",
+    "subtitle": "Desenvolvedor de Software & Entusiasta de Tecnologia",
+    "shortTitle": "João F.",
+    "contact": "Contato"
+  },
+  "nav": {
+    "home": "Início",
+    "goom64": "GOOM64",
+    "swTimeline": "SW Timeline",
+    "kafkaViz": "Kafka Viz",
+    "angularDemo": "Angular Demo"
+  },
+  "home": {
+    "description": "Desenvolvedor apaixonado por tecnologia, especializado em criar soluções inovadoras que combinam performance, usabilidade e design moderno. Explorando as fronteiras entre desenvolvimento web, jogos e visualização de dados.",
+    "goom64": {
+      "title": "GOOM64",
+      "description": "Um remake do clássico DOOM64 desenvolvido em Go e compilado para WebAssembly. Demonstra habilidades em programação de sistemas, otimização de performance e desenvolvimento de jogos."
+    },
+    "swTimeline": {
+      "title": "SW Timeline",
+      "description": "Linha do tempo interativa da Engenharia de Software, conectando padrões, anti-padrões e paradigmas através de fontes primárias e visualizações em constelações."
+    },
+    "stats": {
+      "years": "Anos de Experiência",
+      "projects": "Projetos Concluídos",
+      "technologies": "Tecnologias",
+      "dedication": "Dedicação"
+    },
+    "cta": {
+      "title": "Pronto para colaborar?",
+      "description": "Vamos criar algo incrível juntos. Entre em contato para discutir seu próximo projeto.",
+      "sendEmail": "Enviar Email",
+      "viewGitHub": "Ver GitHub"
+    },
+    "toggleGalaxies": {
+      "show": "Mostrar",
+      "hide": "Ocultar",
+      "label": "Alternar fundo de galáxias"
+    },
+    "kafkaViz": {
+      "title": "Kafka Viz",
+      "description": "Simulação visual de um cluster Apache Kafka em tempo real — tópicos, partições, producers e consumers com animação de mensagens."
+    },
+    "angularDemo": {
+      "title": "Angular Demo",
+      "description": "Tech Stack Explorer em Angular 17+ com standalone components, Signals, Reactive Forms e HttpClient demonstrando padrões reais."
+    }
+  },
+  "goom64": {
+    "title": "GOOM64",
+    "subtitle": "(Go + WASM)",
+    "description": "Um remake do clássico DOOM64 desenvolvido em Go e compilado para WebAssembly. Demonstra habilidades em programação de sistemas e otimização de performance."
+  },
+  "swTimeline": {
+    "title": "SW Timeline",
+    "description": "Linha do tempo interativa da Engenharia de Software.",
+    "underConstruction": {
+      "badge": "Em construção",
+      "message": "Esta visualização está passando por um refactor profundo de UI/UX e engine gráfica. Em breve volta ao ar com performance, visual e interações no nível que eu espero.",
+      "submessage": "Enquanto isso, navegue pelos outros projetos no menu lateral."
+    },
+    "techStack": {
+      "title": "Tech stack",
+      "line1": "Three.js (WebGL) · TypeScript · Vite",
+      "line2": "React (overlay de UI) · Tailwind CSS",
+      "line3": "Deploy estático com"
+    }
+  },
+  "kafkaViz": {
+    "title": "Kafka Viz",
+    "description": "Visualização interativa de um cluster Apache Kafka — topics, partitions, producers, consumers e consumer groups animados em tempo real."
+  },
+  "angularDemo": {
+    "title": "Angular Demo – Tech Stack Explorer",
+    "description": "Aplicação Angular 17+ com standalone components, Signals, Reactive Forms e controle de fluxo moderno (@for / @if)."
+  },
+  "footer": {
+    "documentation": "Documentação",
+    "projectDocs": "Documentação do Projeto",
+    "apiReference": "Referência da API",
+    "contributing": "Guia de Contribuição",
+    "legal": "Legal",
+    "license": "Licença MIT",
+    "privacy": "Política de Privacidade",
+    "terms": "Termos de Serviço",
+    "connect": "Conectar",
+    "copyright": "© 2024 João Figueredo. Construído com React, TypeScript & Tailwind CSS.",
+    "poweredBy": "Powered by GitHub Pages • Hosted on Cloudflare Edge"
+  },
+  "common": {
+    "viewProject": "Ver Projeto",
+    "toggleMenu": "Alternar menu",
+    "closeMenu": "Fechar menu",
+    "exitFullscreen": "Sair da Tela Cheia",
+    "enterFullscreen": "Tela Cheia",
+    "email": "Email"
+  },
+  "timeline": {
+    "search": {
+      "placeholder": "Buscar (ex.: algoritmos, OOP, Turing)",
+      "highlight": "Destacar",
+      "filter": "Filtrar"
+    },
+    "controls": {
+      "past": "← Passado",
+      "future": "Futuro →",
+      "constellations": "constelações",
+      "spacing": "espaçamento",
+      "year": "ano"
+    }
+  }
+}
+

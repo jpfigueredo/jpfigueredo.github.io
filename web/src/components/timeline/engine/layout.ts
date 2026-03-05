@@ -19,8 +19,10 @@ export function createLayoutConfig(
   const years = nodes.map(n => yearOf(n.date)).filter(Boolean);
   const minYear = Math.min(...years);
   const maxYear = Math.max(...years);
-  // Baseline em 70% da altura = 30% do fundo acima das barras de controle (mais alto)
-  const baselineY = height * 0.7;
+  // Baseline em 80% da altura = espaço para legenda (ControlsBar ~80px) na parte inferior
+  // Legenda fica em bottom-2 (8px do fundo) + altura ~60-80px = ~88px do fundo
+  // Baseline precisa estar bem acima disso para não conflitar
+  const baselineY = height * 0.80;
   return { canvasWidth, height, baselineY, branchSpacing, minYear, maxYear };
 }
 

@@ -8,7 +8,7 @@ module.exports = {
       colors: {
         spaceBg: '#0b0f19',
         spaceBg2: '#0e1324',
-        neon: '#00f0ff',
+        neon: '#00e5ff',
         magenta: '#ff00e6',
         lime: '#7cff01',
         amber: '#f5a623'
