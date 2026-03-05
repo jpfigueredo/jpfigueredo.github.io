@@ -1,0 +1,44 @@
+@use 'tokens' as ds;
+
+// Performance hint
+.sw-axis__event-dot,
+.sw-filters__tag {
+  will-change: transform, box-shadow, background, border-color;
+}
+
+// Pulso no dot selecionado
+.sw-axis__event-dot--selected {
+  animation: sw-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes sw-pulse {
+  0%   { box-shadow: 0 0 0 0   ds.$color-border-magenta; }
+  70%  { box-shadow: 0 0 0 10px rgba(244, 114, 182, 0); }
+  100% { box-shadow: 0 0 0 0   rgba(244, 114, 182, 0); }
+}
+
+// Slide-in do painel de detalhes ao selecionar um evento
+.sw-details--visible {
+  animation: sw-slide-in ds.$transition-slow both;
+}
+
+@keyframes sw-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+// Fade-out leve para estado vazio (sem evento selecionado)
+.sw-details--empty {
+  animation: sw-fade-in ds.$transition-base both;
+}
+
+@keyframes sw-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}

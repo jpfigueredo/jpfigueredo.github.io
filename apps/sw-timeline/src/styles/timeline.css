@@ -1,0 +1,170 @@
+.sw-axis {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+
+.sw-axis__track {
+  position: relative;
+  padding: 0.75rem 0.5rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.sw-axis__year-group {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.sw-axis__year-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #9ca3af;
+}
+
+.sw-axis__events-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.sw-axis__event-dot {
+  position: relative;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  background: radial-gradient(circle at top left, rgba(8, 47, 73, 0.95), rgba(15, 23, 42, 0.85));
+  color: #e5e7eb;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease,
+    background 160ms ease;
+}
+
+.sw-axis__event-dot:hover {
+  border-color: rgba(56, 189, 248, 0.9);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.6),
+    0 10px 30px rgba(15, 23, 42, 0.9);
+  transform: translateY(-1px);
+}
+
+.sw-axis__event-dot--selected {
+  border-color: rgba(244, 114, 182, 0.9);
+  box-shadow: 0 0 0 1px rgba(244, 114, 182, 0.9),
+    0 14px 40px rgba(24, 24, 27, 0.95);
+  background: radial-gradient(circle at top left, #4c1d95, #111827);
+}
+
+.sw-axis__event-title {
+  white-space: nowrap;
+}
+
+.sw-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sw-filters__title {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.sw-filters__hint {
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+.sw-filters__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+
+.sw-filters__tag {
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  background: rgba(15, 23, 42, 0.9);
+  color: #e5e7eb;
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.sw-filters__tag--active {
+  border-color: rgba(56, 189, 248, 0.9);
+  background: radial-gradient(circle at top left, #0369a1, #0f172a);
+}
+
+.sw-details {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.sw-details--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  font-size: 0.8rem;
+}
+
+.sw-details__title {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.sw-details__year {
+  margin-left: 0.25rem;
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+.sw-details__summary {
+  font-size: 0.8rem;
+  color: #e5e7eb;
+}
+
+.sw-details__marxist {
+  font-size: 0.8rem;
+  color: #f9a8d4;
+}
+
+.sw-details__section {
+  margin-top: 0.25rem;
+}
+
+.sw-details__section h3 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.sw-details__sources {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.sw-details__sources li + li {
+  margin-top: 0.2rem;
+}
+
+.sw-details__sources a {
+  font-size: 0.75rem;
+  color: #38bdf8;
+  text-decoration: none;
+}
+
+.sw-details__sources a:hover {
+  text-decoration: underline;
+}
+

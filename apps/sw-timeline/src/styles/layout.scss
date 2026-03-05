@@ -1,0 +1,66 @@
+@use 'tokens' as ds;
+
+.sw-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: radial-gradient(circle at top left, #1f2937 0, ds.$color-bg-deep 55%);
+  color: ds.$color-text-primary;
+  font-family: ds.$font-sans;
+}
+
+.sw-shell__header {
+  padding: ds.$space-5 ds.$space-7;
+  border-bottom: 1px solid ds.$color-border-subtle;
+  backdrop-filter: blur(12px);
+  background: linear-gradient(
+    to right,
+    rgba(15, 23, 42, 0.95),
+    rgba(15, 23, 42, 0.7)
+  );
+}
+
+.sw-shell__title h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.sw-shell__title p {
+  margin-top: ds.$space-1;
+  font-size: 0.9rem;
+  color: ds.$color-text-muted;
+}
+
+.sw-shell__body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 260px) minmax(0, 1.8fr) minmax(0, 320px);
+  gap: ds.$space-4;
+  padding: ds.$space-5 ds.$space-7 ds.$space-7;
+}
+
+.sw-shell__sidebar,
+.sw-shell__main,
+.sw-shell__details {
+  border-radius: ds.$radius-md;
+  background: ds.$color-bg-card;
+  border: 1px solid ds.$color-border;
+  box-shadow: ds.$shadow-card;
+}
+
+.sw-shell__main {
+  padding: ds.$space-4 ds.$space-5;
+  overflow: hidden;
+}
+
+.sw-shell__sidebar,
+.sw-shell__details {
+  padding: ds.$space-4 1.1rem;
+}
+
+@media (max-width: 1024px) {
+  .sw-shell__body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+  }
+}
