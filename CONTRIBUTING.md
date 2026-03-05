@@ -76,6 +76,7 @@ docs(contributing): add commit conventions
   - Build artifacts (`dist/`, `target/`, `*.tsbuildinfo`, `*.timestamp-*.mjs`)
   - Secrets or `.env` files
   - Generated lock file changes unless deps actually changed
+- **Do not put claude signature**: The `Co-Authored-By: Claude Sonnet 4.6 noreply@anthropic.com` part is unecessary.
 
 ### Releases
 
