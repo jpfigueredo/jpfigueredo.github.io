@@ -8,7 +8,7 @@
   "nav": {
     "home": "Início",
     "goom64": "GOOM64",
-    "swTimeline": "SW Timeline",
+    "swTimeline": "Ohara",
     "kafkaViz": "Kafka Viz",
     "angularDemo": "Angular Demo"
   },
@@ -19,8 +19,8 @@
       "description": "Um remake do clássico DOOM64 desenvolvido em Go e compilado para WebAssembly. Demonstra habilidades em programação de sistemas, otimização de performance e desenvolvimento de jogos."
     },
     "swTimeline": {
-      "title": "SW Timeline",
-      "description": "Linha do tempo interativa da Engenharia de Software, conectando padrões, anti-padrões e paradigmas através de fontes primárias e visualizações em constelações."
+      "title": "Ohara",
+      "description": "Trilhas de leitura sobre fontes primárias: um DAG da genealogia das ideias, do fundamental ao moderno — com prévia, referências e caminho de estudo."
     },
     "stats": {
       "years": "Anos de Experiência",
@@ -54,7 +54,7 @@
     "description": "Um remake do clássico DOOM64 desenvolvido em Go e compilado para WebAssembly. Demonstra habilidades em programação de sistemas e otimização de performance."
   },
   "swTimeline": {
-    "title": "SW Timeline",
+    "title": "Ohara",
     "description": "Linha do tempo interativa da Engenharia de Software.",
     "underConstruction": {
       "badge": "Em construção",

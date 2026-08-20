@@ -8,7 +8,7 @@
   "nav": {
     "home": "Home",
     "goom64": "GOOM64",
-    "swTimeline": "SW Timeline",
+    "swTimeline": "Ohara",
     "kafkaViz": "Kafka Viz",
     "angularDemo": "Angular Demo"
   },
@@ -19,7 +19,7 @@
       "description": "A remake of the classic DOOM64 game developed in Go and compiled to WebAssembly. Demonstrates skills in systems programming, performance optimization, and game development."
     },
     "swTimeline": {
-      "title": "SW Timeline",
+      "title": "Ohara",
       "description": "Interactive Software Engineering timeline connecting patterns, anti-patterns, and paradigms through primary sources and constellation visualizations."
     },
     "stats": {
@@ -54,7 +54,7 @@
     "description": "A remake of the classic DOOM64 game developed in Go and compiled to WebAssembly. Demonstrates skills in systems programming and performance optimization."
   },
   "swTimeline": {
-    "title": "SW Timeline",
+    "title": "Ohara",
     "description": "Interactive Software Engineering timeline.",
     "underConstruction": {
       "badge": "Under construction",

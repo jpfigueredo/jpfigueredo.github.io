@@ -74,8 +74,7 @@ const SidebarMenu: React.FC<{ isCollapsed: boolean; isMobileOpen: boolean; onTog
   
   const navItems = [
     { path: '/', label: t('nav.home'), icon: '🏠' },
-    { path: '/projects/goom64', label: t('nav.goom64'), icon: '🎮' },
-    { path: '/projects/sw-timeline', label: t('nav.swTimeline'), icon: '📊' },
+    { path: '/projects/sw-timeline', label: t('nav.swTimeline'), icon: '🌳' },
     { path: '/projects/kafka-viz', label: t('nav.kafkaViz'), icon: '📡' },
     { path: '/projects/angular-demo', label: t('nav.angularDemo'), icon: '🅰' },
   ];
@@ -377,22 +376,6 @@ const Home = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 md:gap-8 mb-12 sm:mb-16">
           <div className="group bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-4 sm:p-6 hover:border-neon/50 transition-all duration-300">
             <div className="flex items-center gap-3 mb-3 sm:mb-4">
-              <span className="text-2xl sm:text-3xl">🎮</span>
-              <h3 className="text-lg sm:text-xl font-semibold text-white">{t('home.goom64.title')}</h3>
-            </div>
-            <p className="text-slate-400 text-sm sm:text-base mb-4">
-              {t('home.goom64.description')}
-            </p>
-            <Link
-              to="/projects/goom64"
-              className="inline-flex items-center gap-2 text-neon hover:text-neon/80 transition-colors text-sm sm:text-base"
-            >
-              {t('common.viewProject')} <span className="text-lg">→</span>
-            </Link>
-          </div>
-
-          <div className="group bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-4 sm:p-6 hover:border-neon/50 transition-all duration-300">
-            <div className="flex items-center gap-3 mb-3 sm:mb-4">
               <span className="text-2xl sm:text-3xl">📊</span>
               <h3 className="text-lg sm:text-xl font-semibold text-white">{t('home.swTimeline.title')}</h3>
             </div>
@@ -530,26 +513,6 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   );
 };
 
-const Goom64 = () => {
-  const { t } = useTranslation();
-  
-  return (
-    <MainLayout>
-      <div className="p-4 sm:p-6">
-        <div className="mb-4 sm:mb-6">
-          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">
-            <span className="text-neon">{t('goom64.title')}</span> <span className="text-slate-400 text-lg sm:text-xl">{t('goom64.subtitle')}</span>
-          </h1>
-          <p className="text-slate-400 text-sm sm:text-base">
-            {t('goom64.description')}
-          </p>
-        </div>
-        <IframeViewport src="https://jpfigueredo.github.io/jpfigueredo.github-portfolio-projects/goom64/index.html" title="goom64" />
-      </div>
-    </MainLayout>
-  );
-};
-
 const SwTimeline = () => {
   const [q, setQ] = React.useState('');
   const [mode, setMode] = React.useState<SearchMode>('highlight');
@@ -665,7 +628,6 @@ const Docs = () => (
 
 const router = createBrowserRouter([
   { path: '/', element: <Home /> },
-  { path: '/projects/goom64', element: <Goom64 /> },
   { path: '/projects/sw-timeline', element: <SwTimeline /> },
   { path: '/projects/kafka-viz', element: <KafkaVizPage /> },
   { path: '/projects/angular-demo', element: <AngularDemoPage /> },
