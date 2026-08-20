@@ -106,3 +106,27 @@ features.swTimelineAnalysis         // feature flag
 - O `web/` usa **Tailwind CSS** com classes utilitárias; os apps usam **SCSS + tokens**
 - `apps/doom64-wasm/` existe mas é projeto separado (WASM), não mexer sem contexto
 - O `transition: all 0.2s` global no `web/src/index.css` é intencional (pode ser refinado)
+
+## Ohara (projeto ativo) — ver `docs/ohara/00-brief.md`
+
+O `apps/sw-timeline` está sendo **substituído** pelo **Ohara**: leitor de **trilhas de leitura**
+sobre **fontes primárias** (grafo de citações = DAG). Dois modos:
+- **Público** (web, ads+afiliado): só **fontes livres/públicas** + preview **Google Books**. Barato e legalmente limpo.
+- **Local** (máquina do JP): + **acervo** (`library.db`) + **audiobook** (piper) + **injeção de definição**. Acervo **nunca** no público.
+
+Dados de trilha em `web/src/data/ohara/` (ex.: `seed.distributed-systems.json`, com fontes livres
+verificadas). Estética: biblioteca **Ohara/Elbaf** (madeira/pergaminho/folhagem/coruja) — pele
+quente sobre estrutura simples. Design tokens a migrar em `packages/ui` (neon → Ohara).
+
+### Modo de trabalho (acordos)
+- **Materialista / baseado em evidência**: toda afirmação técnica ancorada em comando, dado ou fonte.
+  Rotular procedência: `[LIVRO]` · `[MODELO]` · `[MAQUINA]` · `[LACUNA]`.
+- **Proibido inventar**: URL de fonte, aresta de citação ou dado sem verificação **não** entra como
+  fato. Arestas do grafo têm procedência (`citada` / `curada` / `inferida`).
+- **Fato × interpretação separados** (ADR-0003): dado fiel e camada de análise nunca no mesmo campo/tabela.
+- **Commits**: Conventional Commits, escopo por pacote, **sem assinatura / co-author** (nem Claude
+  nem ferramenta).
+- **Branches**: `feat/ohara-*` curtas → squash-merge no `main` (que é sempre deployável, pois o
+  Pages publica dele).
+- **Precisão > velocidade** neste projeto (é estudo): iniciar certo e consistente.
+
