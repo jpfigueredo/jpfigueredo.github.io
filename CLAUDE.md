@@ -142,4 +142,6 @@ produção (só então `1.0.0`).
 - **Branches**: `feat/ohara-*` curtas → squash-merge no `main` (que é sempre deployável, pois o
   Pages publica dele).
 - **Precisão > velocidade** neste projeto (é estudo): iniciar certo e consistente.
+- **Registro contínuo**: atualizar `docs/ohara/WORKLOG.md` a cada troca/sessão (decisões +
+  mudanças). Documentar sempre; nada relevante fica só no chat.
 
