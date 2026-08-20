@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://jpfigueredo.github.io/ohara/schema.json",
+  "title": "Ohara trail seed",
+  "description": "Formato de um seed de trilha do Ohara: metadados da trilha, nós (obras/fontes) e arestas (dependências do DAG). Validado no CI. Ownership NUNCA aparece aqui — é resolvido em runtime (só modo local).",
+  "type": "object",
+  "required": ["trail", "nodes", "edges"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "trail": {
+      "type": "object",
+      "required": ["id", "title", "tags"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "title": { "type": "string" },
+        "roles": { "type": "array", "items": { "type": "string" } },
+        "tags": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "provenance": { "type": "string" }
+      }
+    },
+    "nodes": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/node" } },
+    "edges": { "type": "array", "items": { "$ref": "#/$defs/edge" } }
+  },
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": ["id", "type", "label", "year", "sources"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "type": { "enum": ["paper", "book", "thesis", "standard", "article", "person"] },
+        "label": { "type": "string" },
+        "author": { "type": "string" },
+        "year": { "type": "integer", "minimum": 0, "maximum": 2100 },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "sources": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/source" } }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["sourceType"],
+      "additionalProperties": false,
+      "properties": {
+        "sourceType": { "enum": ["free", "retail", "preview-embed"] },
+        "provider": { "type": "string" },
+        "url": { "type": "string", "format": "uri" },
+        "query": { "type": "string" },
+        "note": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "sourceType": { "const": "free" } } },
+          "then": { "required": ["url"], "description": "fonte livre PRECISA de URL verificável" }
+        }
+      ]
+    },
+    "edge": {
+      "type": "object",
+      "required": ["from", "to"],
+      "additionalProperties": false,
+      "properties": {
+        "from": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "to": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "reason": { "type": "array", "items": { "type": "string" } },
+        "provenance": { "enum": ["citada", "curada", "inferida"] }
+      }
+    }
+  }
+}
