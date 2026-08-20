@@ -23,7 +23,7 @@ export const api = {
 } as const;
 
 export const features = {
-  swTimelineMarxistAnalysis: true,
+  swTimelineAnalysis: true,
   kafkaViz: true,
   angularDemo: true,
 } as const;
