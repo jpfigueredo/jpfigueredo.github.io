@@ -20,7 +20,7 @@
   --ds-neon-sky: #38bdf8;
 
   /* Semânticos */
-  --ds-marxist:  #f9a8d4;
+  --ds-analysis: #f9a8d4;
 
   /* Aliases legados (mantidos para compatibilidade com Tailwind config) */
   --bg-space:       var(--ds-bg-deep);
