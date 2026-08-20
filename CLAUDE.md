@@ -96,7 +96,7 @@ import { version, apps, api, features } from '@jpfig/config';
 
 apps.swTimeline.iframeSrcProd  // URL produção do iframe
 apps.swTimeline.basePath       // /apps/sw-timeline/
-features.swTimelineMarxistAnalysis  // feature flag
+features.swTimelineAnalysis         // feature flag
 ```
 
 ## Observações importantes

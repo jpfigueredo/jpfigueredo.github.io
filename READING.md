@@ -172,7 +172,7 @@ Personal bibliography drawn from `/mnt/BACKUP/BACKUP/Livros/`.
 
 ## Critical Theory, Tech Capitalism & History
 
-*Intellectual background for the SW Timeline marxist analysis.*
+*Intellectual background for the SW Timeline materialist analysis layer.*
 
 | Title | Author | Year | Relevance |
 |---|---|---|---|

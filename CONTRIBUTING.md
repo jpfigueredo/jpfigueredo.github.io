@@ -51,7 +51,7 @@ Omit scope only for cross-cutting changes that don't fit a single package.
 ### Examples
 
 ```
-feat(sw-timeline): add macintosh-1984 and java-1995 events with marxist analysis
+feat(sw-timeline): add macintosh-1984 and java-1995 events with materialist analysis
 
 fix(kafka-viz): rename unused broker param to _broker to satisfy strict TS
 

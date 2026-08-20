@@ -43,7 +43,7 @@ css: {
 | `$color-neon` | `#00e5ff` |
 | `$color-neon-sky` | `#38bdf8` |
 | `$color-magenta` | `#ff00e6` |
-| `$color-marxist` | `#f9a8d4` |
+| `$color-analysis` | `#f9a8d4` |
 | `$color-text-primary` | `#e2e8f0` |
 | `$color-text-secondary` | `#9ca3af` |
 | `$shadow-card` | `0 18px 45px rgba(15,23,42,0.9)` |
