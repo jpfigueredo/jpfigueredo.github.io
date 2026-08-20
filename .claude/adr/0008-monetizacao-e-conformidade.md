@@ -23,6 +23,16 @@ disclosure) e de arquitetura (o que é permitido exibir, como rankear).
 5. **Conformidade LGPD** (operador no Brasil): banner de **consentimento de cookies** para
    ads/afiliado, **política de privacidade**, e **disclosure de afiliado** visível ("Como Associado
    Amazon, ganho com compras qualificadas"). Respeitar ToS da Google Books API e da rede de anúncios.
+6. **Onde o afiliado roda** (esclarece "GitHub Pages / open-source pode?"):
+   - **Links de afiliado (tag na URL) funcionam em site estático/GitHub Pages, inclusive open-source.**
+     A tag **não é segredo** — vive na URL publicamente; estar no repo público é ok. Requer só: conta
+     Associados **aprovada** + o site `*.github.io` **registrado** na conta, conteúdo real, e vendas
+     qualificadas em ~180 dias (senão a conta fecha e reabre).
+   - **A PA-API (preço/capa/disponibilidade programáticos) exige chave secreta** → **precisa de
+     backend/serverless** (`services/bff-api`/`edge-proxy`, Cloudflare Worker ou Lambda). A chave
+     **nunca** no bundle estático/open-source. É aqui — e só aqui — que o "sistema próprio" é necessário.
+   - **Não é bloqueante**: dá pra shippar sem afiliado (botão = busca Amazon sem tag) e ligar a tag
+     por **config** quando a conta aprovar.
 
 ## Consequências
 - O público fica **barato de hospedar** (estático + embeds externos) e **legalmente limpo** — só
