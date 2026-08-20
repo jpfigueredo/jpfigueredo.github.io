@@ -114,9 +114,22 @@ sobre **fontes primárias** (grafo de citações = DAG). Dois modos:
 - **Público** (web, ads+afiliado): só **fontes livres/públicas** + preview **Google Books**. Barato e legalmente limpo.
 - **Local** (máquina do JP): + **acervo** (`library.db`) + **audiobook** (piper) + **injeção de definição**. Acervo **nunca** no público.
 
-Dados de trilha em `web/src/data/ohara/` (ex.: `seed.distributed-systems.json`, com fontes livres
-verificadas). Estética: biblioteca **Ohara/Elbaf** (madeira/pergaminho/folhagem/coruja) — pele
-quente sobre estrutura simples. Design tokens a migrar em `packages/ui` (neon → Ohara).
+**Estrutura**: `/apps` é o guarda-chuva de todos os projetos do portfólio; **Ohara é um projeto
+próprio** (não um app único) em `apps/ohara/`, com suas camadas dentro:
+
+```text
+apps/ohara/
+├── front/     → React + TS (UI da trilha)
+├── api/       → API pública (trilha, verificador de fontes, proxy Google Books)
+├── bff/       → backend-for-frontend
+└── service/   → pipeline pesado LOCAL (OCR, narração/piper, injeção, library.db)
+```
+
+Isso exige o glob de workspaces do root virar **`apps/*/*`** (além de `apps/*`). Os dados de trilha
+migram de `web/src/data/ohara/` para dentro de `apps/ohara/` quando o app for scaffoldado.
+Estética: biblioteca **Ohara/Elbaf** (madeira/pergaminho/folhagem/coruja) — pele quente sobre
+estrutura simples. Design tokens a migrar em `packages/ui` (neon → Ohara). Versões `0.1.0` até
+produção (só então `1.0.0`).
 
 ### Modo de trabalho (acordos)
 - **Materialista / baseado em evidência**: toda afirmação técnica ancorada em comando, dado ou fonte.
