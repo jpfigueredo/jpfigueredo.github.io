@@ -3,6 +3,13 @@
 Registro contínuo do trabalho (decisões + mudanças), mais recente no topo. **Atualizar a cada
 sessão/troca de informação.** Fatos verificados são marcados; suposições não entram como fato.
 
+## 2026-08-21
+
+- **Guia de migração** criado — `docs/ohara/MIGRATION-ext4.md` (Node 20 via nvm, clone no ext4,
+  node_modules em vez de PnP, build/run). Objetivo: **local espelhar o CI**, sair do NTFS/PnP/Node25.
+- Decisão pendente (vira ADR): **node_modules × PnP** — recomendação node_modules.
+- JP reforçou: **aliviar contexto via RAG** (docs/memória como fonte de verdade); worklog a cada troca.
+
 ## 2026-08-20
 
 - **Identidade visual** do Ohara definida — paleta madeira/pergaminho/folhagem/âmbar/latão, temas
