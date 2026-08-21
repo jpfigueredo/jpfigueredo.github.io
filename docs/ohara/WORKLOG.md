@@ -10,6 +10,8 @@ sessão/troca de informação.** Fatos verificados são marcados; suposições n
 - Decisão pendente (vira ADR): **node_modules × PnP** — recomendação node_modules.
 - JP reforçou: **aliviar contexto via RAG** (docs/memória como fonte de verdade); worklog a cada troca.
 
+- **Migração ext4 EXECUTADA** ✅ — Node 20 (nvm), clone limpo em `~/projetos/portfolio`, `rm .pnp.cjs`; `yarn install` passou (233s) e web/sw-timeline/kafka-viz buildaram. Único erro: `angular-demo` tenta embutir fonte do Google no build (não-fatal). **Repo de trabalho agora é o ext4.**
+
 ## 2026-08-20
 
 - **Identidade visual** do Ohara definida — paleta madeira/pergaminho/folhagem/âmbar/latão, temas
