@@ -1,0 +1,95 @@
+/* Tokens do Ohara — ESCOPADOS em .ohara (não vazam pro resto do portfólio). */
+.ohara {
+  --bg: #f3e9d6;
+  --surface: #fffaf0;
+  --ink: #26201a;
+  --muted: #6b5d47;
+  --border: #ddceb0;
+  --foliage: #4f7a4a;
+  --amber: #d99433;
+  --brass: #b78a2e;
+  --link: #2563eb;
+
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  padding: 40px 20px 80px;
+}
+@media (prefers-color-scheme: dark) {
+  .ohara {
+    --bg: #1c130a;
+    --surface: #2a1d10;
+    --ink: #ece0c8;
+    --muted: #a8926f;
+    --border: #3a2c18;
+    --foliage: #6b9e5f;
+    --amber: #e0a54a;
+    --brass: #c9a24a;
+    --link: #6f9bf5;
+  }
+}
+
+.trail {
+  max-width: 720px;
+  margin: 0 auto;
+}
+.trail__eyebrow {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--brass);
+  margin: 0;
+}
+.trail__title {
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  margin: 6px 0 4px;
+  letter-spacing: -0.01em;
+}
+.trail__meta {
+  color: var(--muted);
+  margin: 0 0 24px;
+}
+
+.trail__nodes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.node {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--brass);
+  border-radius: 12px;
+  padding: 14px 18px;
+}
+.node--free { border-left-color: var(--brass); }
+.node--retail { border-left-color: var(--amber); }
+.node__year {
+  font-family: ui-monospace, Menlo, monospace;
+  font-weight: 700;
+  color: var(--muted);
+  min-width: 46px;
+}
+.node__body { flex: 1; min-width: 0; }
+.node__label { margin: 0; font-size: 1.05rem; line-height: 1.25; }
+.node__author { margin: 2px 0 0; font-size: 0.85rem; color: var(--muted); }
+
+.tag {
+  flex: none;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 10px;
+  border-radius: 7px;
+  white-space: nowrap;
+}
+.tag--free { color: var(--brass); border: 1px solid var(--brass); }
+.tag--retail { color: var(--amber); border: 1px solid var(--amber); }

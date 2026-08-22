@@ -6,6 +6,7 @@
   "workspaces": [
     "web",
     "apps/*",
+    "apps/*/*",
     "packages/*",
     "services/*"
   ],
@@ -22,6 +23,7 @@
     "rebuild": "yarn clean && yarn build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
     "verify:links": "node scripts/verify-sources.mjs",
     "ci:verify:links": "node scripts/verify-sources.mjs --ci",
     "generate:node": "node scripts/generate-node.mjs"
