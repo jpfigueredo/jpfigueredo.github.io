@@ -12,6 +12,8 @@ sessão/troca de informação.** Fatos verificados são marcados; suposições n
 
 - **Migração ext4 EXECUTADA** ✅ — Node 20 (nvm), clone limpo em `~/projetos/portfolio`, `rm .pnp.cjs`; `yarn install` passou (233s) e web/sw-timeline/kafka-viz buildaram. Único erro: `angular-demo` tenta embutir fonte do Google no build (não-fatal). **Repo de trabalho agora é o ext4.**
 
+- **Validação de processo** (JP): identificado que **testes = 0** e falta **gate de qualidade no CI** + **Definition of Done**. Decisão (pendente ok): scaffoldar `apps/ohara/front` **já com** Vitest + `ci.yml` (typecheck/lint/test/verify-sources em PR) + DoD escrita. LLM **não trava** o dev (front/trilha são dado estático; Ollama é modo local, épico posterior).
+
 ## 2026-08-20
 
 - **Identidade visual** do Ohara definida — paleta madeira/pergaminho/folhagem/âmbar/latão, temas
