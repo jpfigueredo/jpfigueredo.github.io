@@ -14,6 +14,8 @@ sessão/troca de informação.** Fatos verificados são marcados; suposições n
 
 - **Validação de processo** (JP): identificado que **testes = 0** e falta **gate de qualidade no CI** + **Definition of Done**. Decisão (pendente ok): scaffoldar `apps/ohara/front` **já com** Vitest + `ci.yml` (typecheck/lint/test/verify-sources em PR) + DoD escrita. LLM **não trava** o dev (front/trilha são dado estático; Ollama é modo local, épico posterior).
 
+- **DoR + DoD criados** (`docs/ohara/DOD-DOR.md`), adaptados aos acordos. **SAST no gate**: **CodeQL** já (grátis em repo público) + **Checkmarx** quando houver acesso (familiaridade p/ o trabalho do JP). Reflexão LLM×engenheiro: a melhora da interação vem de **guardrails** (testes/SAST/DoD/RAG), não de modelo mais esperto; cadência = passo menor + explicar (JP aprende fazendo).
+
 ## 2026-08-20
 
 - **Identidade visual** do Ohara definida — paleta madeira/pergaminho/folhagem/âmbar/latão, temas

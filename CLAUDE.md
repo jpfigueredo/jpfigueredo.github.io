@@ -144,4 +144,5 @@ produção (só então `1.0.0`).
 - **Precisão > velocidade** neste projeto (é estudo): iniciar certo e consistente.
 - **Registro contínuo**: atualizar `docs/ohara/WORKLOG.md` a cada troca/sessão (decisões +
   mudanças). Documentar sempre; nada relevante fica só no chat.
+- **DoR / DoD**: toda tarefa segue `docs/ohara/DOD-DOR.md` — não começa sem DoR, não fecha sem DoD.
 
