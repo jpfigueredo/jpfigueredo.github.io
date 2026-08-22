@@ -1,0 +1,64 @@
+{
+  "trail": {
+    "id": "distributed-systems-architecture",
+    "title": "Sistemas Distribuídos & Arquitetura de Software",
+    "roles": ["software-architect", "backend-developer"],
+    "tags": ["distributed-systems", "software-architecture"],
+    "provenance": "Linhagem cruzada com listas de referência conhecidas (Murat Demirbas 'Foundational distributed systems papers'; dancres.github.io; awesome-distributed-systems; mixu.net/distsys). URLs de fonte livre verificadas (HTTP 200 + PDF) em 2026-08-20. Arestas: procedência 'curada' salvo indicação. Ownership resolvido em runtime (só no modo local)."
+  },
+  "nodes": [
+    { "id": "codd-1970", "type": "paper", "label": "A Relational Model of Data for Large Shared Data Banks", "author": "E. F. Codd", "year": 1970, "tags": ["data", "databases"],
+      "sources": [ { "sourceType": "retail", "provider": "acm", "url": "https://dl.acm.org/doi/10.1145/362384.362685" } ] },
+
+    { "id": "parnas-1972", "type": "paper", "label": "On the Criteria To Be Used in Decomposing Systems into Modules", "author": "David L. Parnas", "year": 1972, "tags": ["modularity", "software-architecture"],
+      "sources": [ { "sourceType": "retail", "provider": "acm", "url": "https://dl.acm.org/doi/10.1145/361598.361623" } ] },
+
+    { "id": "brooks-1975", "type": "book", "label": "The Mythical Man-Month", "author": "Frederick P. Brooks Jr.", "year": 1975, "tags": ["process", "software-engineering"],
+      "sources": [ { "sourceType": "retail", "provider": "amazon", "query": "The Mythical Man-Month Brooks" } ] },
+
+    { "id": "lamport-1978", "type": "paper", "label": "Time, Clocks, and the Ordering of Events in a Distributed System", "author": "Leslie Lamport", "year": 1978, "tags": ["distributed-systems", "time", "consistency"],
+      "sources": [ { "sourceType": "free", "url": "https://lamport.azurewebsites.net/pubs/time-clocks.pdf", "note": "PDF oficial do autor — verificado 2026-08-20 (834 KB)" } ] },
+
+    { "id": "gof-1994", "type": "book", "label": "Design Patterns: Elements of Reusable Object-Oriented Software", "author": "Gamma, Helm, Johnson, Vlissides", "year": 1994, "tags": ["patterns", "software-architecture"],
+      "sources": [ { "sourceType": "retail", "provider": "amazon", "query": "Design Patterns Gamma Helm Johnson Vlissides" } ] },
+
+    { "id": "fielding-2000", "type": "thesis", "label": "Architectural Styles and the Design of Network-based Software Architectures (REST)", "author": "Roy T. Fielding", "year": 2000, "tags": ["rest", "web", "software-architecture"],
+      "sources": [ { "sourceType": "free", "url": "https://ics.uci.edu/~fielding/pubs/dissertation/fielding_dissertation.pdf", "note": "dissertação UC Irvine — verificado 2026-08-20" } ] },
+
+    { "id": "fowler-2002", "type": "book", "label": "Patterns of Enterprise Application Architecture", "author": "Martin Fowler", "year": 2002, "tags": ["patterns", "enterprise", "software-architecture"],
+      "sources": [ { "sourceType": "retail", "provider": "amazon", "query": "Patterns of Enterprise Application Architecture Fowler" } ] },
+
+    { "id": "evans-2003", "type": "book", "label": "Domain-Driven Design", "author": "Eric Evans", "year": 2003, "tags": ["ddd", "software-architecture", "modeling"],
+      "sources": [ { "sourceType": "retail", "provider": "amazon", "query": "Domain-Driven Design Eric Evans" } ] },
+
+    { "id": "mapreduce-2004", "type": "paper", "label": "MapReduce: Simplified Data Processing on Large Clusters", "author": "Jeffrey Dean, Sanjay Ghemawat", "year": 2004, "tags": ["distributed-systems", "data", "batch"],
+      "sources": [ { "sourceType": "free", "url": "https://research.google.com/archive/mapreduce-osdi04.pdf", "note": "Google Research, OSDI'04 — verificado 2026-08-20" } ] },
+
+    { "id": "dynamo-2007", "type": "paper", "label": "Dynamo: Amazon's Highly Available Key-value Store", "author": "DeCandia et al.", "year": 2007, "tags": ["distributed-systems", "replication", "consistency"],
+      "sources": [ { "sourceType": "free", "url": "https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf", "note": "All Things Distributed, SOSP'07 — verificado 2026-08-20 (879 KB)" } ] },
+
+    { "id": "raft-2014", "type": "paper", "label": "In Search of an Understandable Consensus Algorithm (Raft)", "author": "Diego Ongaro, John Ousterhout", "year": 2014, "tags": ["distributed-systems", "consensus"],
+      "sources": [ { "sourceType": "free", "url": "https://raft.github.io/raft.pdf", "note": "site oficial do Raft — verificado 2026-08-20" } ] },
+
+    { "id": "kleppmann-2017", "type": "book", "label": "Designing Data-Intensive Applications", "author": "Martin Kleppmann", "year": 2017, "tags": ["distributed-systems", "data", "software-architecture"],
+      "sources": [ { "sourceType": "retail", "provider": "amazon", "query": "Designing Data-Intensive Applications Kleppmann" } ] },
+
+    { "id": "newman-2021", "type": "book", "label": "Building Microservices (2nd ed.)", "author": "Sam Newman", "year": 2021, "tags": ["microservices", "software-architecture", "distributed-systems"],
+      "sources": [ { "sourceType": "retail", "provider": "amazon", "query": "Building Microservices Sam Newman" } ] }
+  ],
+  "edges": [
+    { "from": "parnas-1972",   "to": "gof-1994",       "reason": ["modularidade"],                 "provenance": "curada" },
+    { "from": "gof-1994",      "to": "fowler-2002",    "reason": ["padrões"],                      "provenance": "curada" },
+    { "from": "fowler-2002",   "to": "evans-2003",     "reason": ["modelo de domínio"],            "provenance": "curada" },
+    { "from": "evans-2003",    "to": "newman-2021",    "reason": ["bounded context"],              "provenance": "curada" },
+    { "from": "fielding-2000", "to": "newman-2021",    "reason": ["REST / serviços"],              "provenance": "curada" },
+    { "from": "brooks-1975",   "to": "newman-2021",    "reason": ["organização de times (Conway)"],"provenance": "curada" },
+    { "from": "codd-1970",     "to": "kleppmann-2017", "reason": ["modelo de dados"],              "provenance": "curada" },
+    { "from": "lamport-1978",  "to": "dynamo-2007",    "reason": ["ordenação / consistência"],     "provenance": "curada" },
+    { "from": "lamport-1978",  "to": "raft-2014",      "reason": ["consenso"],                     "provenance": "curada" },
+    { "from": "mapreduce-2004","to": "kleppmann-2017", "reason": ["processamento de dados"],       "provenance": "curada" },
+    { "from": "dynamo-2007",   "to": "kleppmann-2017", "reason": ["replicação"],                   "provenance": "curada" },
+    { "from": "raft-2014",     "to": "kleppmann-2017", "reason": ["consenso"],                     "provenance": "curada" },
+    { "from": "kleppmann-2017","to": "newman-2021",    "reason": ["dados em serviços"],            "provenance": "curada" }
+  ]
+}
