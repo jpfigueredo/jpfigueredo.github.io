@@ -16,6 +16,8 @@ sessão/troca de informação.** Fatos verificados são marcados; suposições n
 
 - **DoR + DoD criados** (`docs/ohara/DOD-DOR.md`), adaptados aos acordos. **SAST no gate**: **CodeQL** já (grátis em repo público) + **Checkmarx** quando houver acesso (familiaridade p/ o trabalho do JP). Reflexão LLM×engenheiro: a melhora da interação vem de **guardrails** (testes/SAST/DoD/RAG), não de modelo mais esperto; cadência = passo menor + explicar (JP aprende fazendo).
 
+- **`apps/ohara/front` scaffoldado** ✅ — Vite+React+TS, renderiza a **trilha verificada** (`seed.distributed-systems.json`) com **Vitest** (3 testes verdes: título · nó conhecido · **5 fontes livres**). `yarn build` (564ms) + `yarn test` passam. Decisões: dado **estático via import** (público = bundle, sem LLM/backend); tokens Ohara **escopados** em `.ohara` (não puxa o `@jpfig/ui` neon); test files fora do `tsc` de build (vitest roda). Workspace **`apps/*/*`** ligado.
+
 ## 2026-08-20
 
 - **Identidade visual** do Ohara definida — paleta madeira/pergaminho/folhagem/âmbar/latão, temas
