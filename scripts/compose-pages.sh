@@ -23,6 +23,8 @@ done < <(find apps -type d -name dist -not -path '*/node_modules/*' 2>/dev/null)
 
 # SPA: 404 = index
 [ -f .pages/index.html ] && cp .pages/index.html .pages/404.html
+# impede o GitHub de rodar Jekyll no artefato (serve os arquivos como estão)
+touch .pages/.nojekyll
 
 echo "compose-pages: composto. index.html encontrados:"
 find .pages/apps -maxdepth 3 -name index.html 2>/dev/null | sed 's/^/  /'
