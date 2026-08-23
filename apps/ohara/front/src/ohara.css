@@ -33,6 +33,108 @@
   margin: 0;
   font-size: 0.95rem;
 }
+.app-head__back {
+  display: inline-block;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 5px 12px;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.app-head__back:hover {
+  color: var(--ink);
+  border-color: var(--brass);
+}
+
+/* ---------- home / seletor de trilhas ---------- */
+.home {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 64px 24px;
+}
+.home__head {
+  text-align: center;
+  margin-bottom: 34px;
+}
+.home__eyebrow {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--brass);
+  margin: 0;
+}
+.home__title {
+  font-size: clamp(2rem, 5vw, 3rem);
+  margin: 8px 0 6px;
+  letter-spacing: -0.02em;
+}
+.home__lede {
+  color: var(--muted);
+  margin: 0 auto;
+  max-width: 52ch;
+}
+.home__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+}
+.trail-card {
+  position: relative;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--brass);
+  border-radius: var(--radius-card);
+  padding: 20px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ink);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.trail-card--active:hover {
+  transform: translateY(-4px);
+  border-left-color: var(--amber);
+}
+.trail-card--soon {
+  opacity: 0.6;
+  cursor: not-allowed;
+  border-left-color: var(--border);
+}
+.trail-card__title {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+.trail-card__sub {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.trail-card__go {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.8rem;
+  color: var(--brass);
+  margin-top: 6px;
+}
+.trail-card__badge {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 2px 7px;
+}
 
 /* ---------- canvas / DAG ---------- */
 .canvas-scroll {
