@@ -5,6 +5,8 @@ sessão/troca de informação.** Fatos verificados são marcados; suposições n
 
 ## 2026-08-22
 
+- **Ideia parkada (JP): concept reels** no modal — animação muda em loop mostrando a obra num exemplo real (arq. hexagonal → dataflow; Kafka → logs→offset→…). Registrada em `BACKLOG.md`. Insight-chave: **animar por conceito** (templates paramétricos, ~20-30) e não por livro — é o 'catálogo de tipos'. Fica **depois da v1** (feature funcional + bonita).
+
 - **Camada de explicadores (beginners)** ✅ — schema `explainers[]` (rampa secundária, NÃO nó do DAG); 6 nós difíceis curados com rampas **reais verificadas** (Raft viz, CAP ilustrado, Distributed Systems for Fun and Profit, palestra Paxos/Ongaro) + 1 retail (System Design Interview). Modal ganhou 'Entenda antes'; nó ganha 🌱. Regra ADR-0008 mantida (ordem cega à comissão; explicador aditivo). **Paleta calibrada** (marrom mais leve, dia mais creme) via `tokens.css` — feedback visual do JP. build+test verdes (8 testes).
 
 - **Trilha expandida p/ 26 nós** (Turing/von Neumann → Ford/Newman), **13 fontes livres verificadas** (hosts oficiais: Lamport, MIT CSAIL, ETH, MIT, USENIX, Google) + 33 arestas cronológicas. Raízes: turing/codd/brooks/lamport. Teste virou **contrato** (toda fonte livre tem URL http). **Tokens extraídos** p/ `tokens.css` (identidade escopada, trocável). build+test verdes (7 testes). Seed sincronizado com `web/src/data/ohara`.
