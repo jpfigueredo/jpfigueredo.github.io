@@ -530,50 +530,15 @@ const SwTimeline = () => {
           </p>
         </div>
 
-        {/* Placeholder de Em Construção */}
-        <div className="relative border border-yellow-600/40 rounded-lg bg-yellow-900/10 p-6 sm:p-8 text-center">
-          <div className="inline-flex items-center gap-3 px-3 py-1.5 rounded-full border border-yellow-500/40 bg-yellow-500/10 text-yellow-300 text-xs sm:text-sm font-semibold">
-            🚧 {t('swTimeline.underConstruction.badge')}
-          </div>
-          <p className="mt-4 text-sm sm:text-base text-slate-300 max-w-2xl mx-auto">
-            {t('swTimeline.underConstruction.message')}
-          </p>
-          <p className="mt-3 text-xs sm:text-sm text-slate-400">
-            {t('swTimeline.underConstruction.submessage')}
-          </p>
-        </div>
-        {/* Tech stack do projeto */}
-        <div className="mt-6 sm:mt-8 border border-slate-700 rounded-lg bg-slate-900/40 p-4 sm:p-5">
-          <h2 className="text-white font-semibold mb-3">{t('swTimeline.techStack.title')}</h2>
-          <div className="text-sm sm:text-base text-slate-300 leading-relaxed">
-            <ul className="list-disc pl-5 space-y-1">
-              <li>
-                <a className="text-neon hover:underline" href="https://threejs.org/" target="_blank" rel="noreferrer">Three.js</a> (WebGL) ·
-                <a className="text-neon hover:underline ml-1" href="https://www.typescriptlang.org/" target="_blank" rel="noreferrer">TypeScript</a> ·
-                <a className="text-neon hover:underline ml-1" href="https://vitejs.dev/" target="_blank" rel="noreferrer">Vite</a>
-              </li>
-              <li>
-                <a className="text-neon hover:underline" href="https://react.dev/" target="_blank" rel="noreferrer">React</a> (overlay de UI) ·
-                <a className="text-neon hover:underline ml-1" href="https://tailwindcss.com/" target="_blank" rel="noreferrer">Tailwind CSS</a>
-              </li>
-              <li>
-                {t('swTimeline.techStack.line3')}
-                <a className="text-neon hover:underline ml-1" href="https://pages.github.com/" target="_blank" rel="noreferrer">GitHub Pages</a>
-              </li>
-            </ul>
-          </div>
-        </div>
-        {/* Iframe com a beta do app React do SW Timeline */}
-        <div className="mt-8 sm:mt-10">
+        {/* App Ohara — trilhas de leitura sobre fontes primárias */}
+        <div className="mt-4">
           <h2 className="text-lg sm:text-xl font-semibold text-white mb-3">
-            Beta interativa
-            <span className="ml-2 text-xs align-middle text-slate-400">
-              {configVersion}
-            </span>
+            Ohara
+            <span className="ml-2 text-xs align-middle text-slate-400">{configVersion}</span>
           </h2>
           <IframeViewport
-            src={configApps.swTimeline.iframeSrcProd}
-            title="SW Timeline – Beta"
+            src={configApps.ohara.iframeSrcProd}
+            title="Ohara – Trilhas de Leitura"
           />
         </div>
       </div>
