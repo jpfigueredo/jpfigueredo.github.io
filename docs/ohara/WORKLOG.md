@@ -3,6 +3,10 @@
 Registro contínuo do trabalho (decisões + mudanças), mais recente no topo. **Atualizar a cada
 sessão/troca de informação.** Fatos verificados são marcados; suposições não entram como fato.
 
+## 2026-08-22
+
+- **Deploy de app aninhado corrigido** ✅ — `scripts/compose-pages.sh` (fonte única) copia `apps/**/dist` (qualquer profundidade, exclui `node_modules`) → `.pages/apps/<path>`; `compose:pages` e `pages.yml` agora chamam o script. Verificado local: `apps/ohara/front` compõe em `.pages/apps/ohara/front/index.html` (deploy → `/apps/ohara/front/`). `clean` atualizado p/ `apps/*/*/dist`. `package-lock.json` removido (yarn-only).
+
 ## 2026-08-21
 
 - **Guia de migração** criado — `docs/ohara/MIGRATION-ext4.md` (Node 20 via nvm, clone no ext4,
