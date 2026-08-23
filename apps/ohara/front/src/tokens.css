@@ -1,37 +1,40 @@
 /* Ohara — design tokens. Identidade ESCOPADA em .ohara (não vaza pro portfólio),
-   em um único arquivo trocável (o "aplicar tokens" que combinamos). */
+   em um único arquivo trocável. Paleta calibrada p/ conforto visual: marrom mais leve,
+   acentos quentes porém não saturados demais. */
 .ohara {
-  --bg: #f3e9d6;
-  --bg-2: #ece0c8;
-  --surface: #fffaf0;
-  --ink: #26201a;
-  --muted: #6b5d47;
-  --border: #ddceb0;
-  --foliage: #4f7a4a;
-  --amber: #d99433;
-  --brass: #b78a2e;
-  --link: #2563eb;
-  --grid: rgba(120, 96, 50, 0.06);
-  --edge: rgba(120, 96, 50, 0.5);
+  /* Dia — pergaminho suave (menos "tan", mais creme) */
+  --bg: #f7f1e6;
+  --bg-2: #efe6d4;
+  --surface: #fffdf9;
+  --ink: #2b2419;
+  --muted: #7a6d58;
+  --border: #e2d8c4;
+  --foliage: #567f50;
+  --amber: #cf9036;
+  --brass: #a9812f;
+  --link: #2f5fd0;
+  --grid: rgba(120, 96, 50, 0.05);
+  --edge: rgba(120, 96, 50, 0.42);
 
   /* estruturais */
   --radius-card: 18px;
-  --shadow-modal: 0 30px 80px rgba(0, 0, 0, 0.5);
+  --shadow-modal: 0 30px 80px rgba(0, 0, 0, 0.45);
   --disc-depth: 10px;
 }
 @media (prefers-color-scheme: dark) {
   .ohara {
-    --bg: #0f0a05;
-    --bg-2: #1c130a;
-    --surface: #241a10;
-    --ink: #ece0c8;
-    --muted: #a8926f;
-    --border: #3a2c18;
-    --foliage: #6b9e5f;
-    --amber: #e0a54a;
-    --brass: #d0aa52;
-    --link: #6f9bf5;
-    --grid: rgba(208, 170, 82, 0.06);
-    --edge: rgba(208, 170, 82, 0.42);
+    /* Noite — marrom aconchegante e MAIS LEVE (nada de preto-marrom oprimindo) */
+    --bg: #26201a;
+    --bg-2: #2f2820;
+    --surface: #383024;
+    --ink: #f0e7d4;
+    --muted: #b0a184;
+    --border: #4a3d2d;
+    --foliage: #7aa96e;
+    --amber: #e6ad55;
+    --brass: #d4b062;
+    --link: #82a6f2;
+    --grid: rgba(220, 180, 100, 0.045);
+    --edge: rgba(220, 180, 100, 0.4);
   }
 }
