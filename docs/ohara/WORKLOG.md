@@ -5,6 +5,8 @@ sessão/troca de informação.** Fatos verificados são marcados; suposições n
 
 ## 2026-08-22
 
+- **Camada de explicadores (beginners)** ✅ — schema `explainers[]` (rampa secundária, NÃO nó do DAG); 6 nós difíceis curados com rampas **reais verificadas** (Raft viz, CAP ilustrado, Distributed Systems for Fun and Profit, palestra Paxos/Ongaro) + 1 retail (System Design Interview). Modal ganhou 'Entenda antes'; nó ganha 🌱. Regra ADR-0008 mantida (ordem cega à comissão; explicador aditivo). **Paleta calibrada** (marrom mais leve, dia mais creme) via `tokens.css` — feedback visual do JP. build+test verdes (8 testes).
+
 - **Trilha expandida p/ 26 nós** (Turing/von Neumann → Ford/Newman), **13 fontes livres verificadas** (hosts oficiais: Lamport, MIT CSAIL, ETH, MIT, USENIX, Google) + 33 arestas cronológicas. Raízes: turing/codd/brooks/lamport. Teste virou **contrato** (toda fonte livre tem URL http). **Tokens extraídos** p/ `tokens.css` (identidade escopada, trocável). build+test verdes (7 testes). Seed sincronizado com `web/src/data/ohara`.
 
 - **Front evoluído p/ DAG interativo** ✅ — `graph.ts` faz **layout em camadas** (Kahn + longest-path; **quebra ciclo por cronologia** → zero sobreposição por construção). `TrailCanvas` (nós posicionados + arestas SVG), `TrailNode` (checkpoint Ohara), `NodeModal` (conexões pré-req×descendente + fontes/CTA), tudo com **framer-motion** (hover hop/aura, modal spring). **External config** (`config.ts`+`loadTrail()`: estático→API vira config). **6 testes verdes** (graph 5 + App render). Falta: **polimento visual** (olho do JP via `yarn dev`), capas reais, prévia PDF, e **completar o dado** (13 nós → todas as fontes primárias).
