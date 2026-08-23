@@ -5,6 +5,10 @@ export const apps = {
     basePath: '/apps/sw-timeline/',
     iframeSrcProd: 'https://jpfigueredo.github.io/apps/sw-timeline/index.html',
   },
+  ohara: {
+    basePath: '/apps/ohara/front/',
+    iframeSrcProd: 'https://jpfigueredo.github.io/apps/ohara/front/index.html',
+  },
   kafkaViz: {
     basePath: '/apps/kafka-viz/',
     iframeSrcProd: 'https://jpfigueredo.github.io/apps/kafka-viz/index.html',
