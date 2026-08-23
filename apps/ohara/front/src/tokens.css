@@ -1,0 +1,37 @@
+/* Ohara — design tokens. Identidade ESCOPADA em .ohara (não vaza pro portfólio),
+   em um único arquivo trocável (o "aplicar tokens" que combinamos). */
+.ohara {
+  --bg: #f3e9d6;
+  --bg-2: #ece0c8;
+  --surface: #fffaf0;
+  --ink: #26201a;
+  --muted: #6b5d47;
+  --border: #ddceb0;
+  --foliage: #4f7a4a;
+  --amber: #d99433;
+  --brass: #b78a2e;
+  --link: #2563eb;
+  --grid: rgba(120, 96, 50, 0.06);
+  --edge: rgba(120, 96, 50, 0.5);
+
+  /* estruturais */
+  --radius-card: 18px;
+  --shadow-modal: 0 30px 80px rgba(0, 0, 0, 0.5);
+  --disc-depth: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  .ohara {
+    --bg: #0f0a05;
+    --bg-2: #1c130a;
+    --surface: #241a10;
+    --ink: #ece0c8;
+    --muted: #a8926f;
+    --border: #3a2c18;
+    --foliage: #6b9e5f;
+    --amber: #e0a54a;
+    --brass: #d0aa52;
+    --link: #6f9bf5;
+    --grid: rgba(208, 170, 82, 0.06);
+    --edge: rgba(208, 170, 82, 0.42);
+  }
+}

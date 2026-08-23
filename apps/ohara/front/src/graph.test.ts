@@ -18,9 +18,10 @@ describe('graph / buildLayout', () => {
   it('põe as raízes cronológicas na camada 0', () => {
     const layout = buildLayout(trail);
     const layer0 = layout.nodes.filter((p) => p.layer === 0).map((p) => p.node.id);
+    expect(layer0).toContain('turing-1936');
     expect(layer0).toContain('codd-1970');
-    expect(layer0).toContain('parnas-1972');
     expect(layer0).toContain('brooks-1975');
+    expect(layer0).toContain('lamport-1978');
   });
 
   it('DAG sem back-edge: toda aresta respeita a cronologia', () => {
@@ -40,7 +41,16 @@ describe('graph / buildLayout', () => {
 });
 
 describe('contrato do dado', () => {
-  it('tem exatamente 5 fontes livres verificadas', () => {
-    expect(trail.nodes.filter((n) => primaryState(n) === 'free')).toHaveLength(5);
+  it('toda fonte livre tem URL http (nunca inventada)', () => {
+    const free = trail.nodes.flatMap((n) => n.sources).filter((s) => s.sourceType === 'free');
+    expect(free.length).toBeGreaterThan(0);
+    for (const s of free) {
+      expect(typeof s.url === 'string' && s.url.startsWith('http')).toBe(true);
+    }
+  });
+
+  it('mantém pelo menos uma raiz e uma fronteira', () => {
+    expect(trail.nodes.some((n) => n.year <= 1945)).toBe(true);
+    expect(trail.nodes.some((n) => n.year >= 2020)).toBe(true);
   });
 });
