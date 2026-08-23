@@ -5,6 +5,8 @@ sessão/troca de informação.** Fatos verificados são marcados; suposições n
 
 ## 2026-08-22
 
+- **Trilha expandida p/ 26 nós** (Turing/von Neumann → Ford/Newman), **13 fontes livres verificadas** (hosts oficiais: Lamport, MIT CSAIL, ETH, MIT, USENIX, Google) + 33 arestas cronológicas. Raízes: turing/codd/brooks/lamport. Teste virou **contrato** (toda fonte livre tem URL http). **Tokens extraídos** p/ `tokens.css` (identidade escopada, trocável). build+test verdes (7 testes). Seed sincronizado com `web/src/data/ohara`.
+
 - **Front evoluído p/ DAG interativo** ✅ — `graph.ts` faz **layout em camadas** (Kahn + longest-path; **quebra ciclo por cronologia** → zero sobreposição por construção). `TrailCanvas` (nós posicionados + arestas SVG), `TrailNode` (checkpoint Ohara), `NodeModal` (conexões pré-req×descendente + fontes/CTA), tudo com **framer-motion** (hover hop/aura, modal spring). **External config** (`config.ts`+`loadTrail()`: estático→API vira config). **6 testes verdes** (graph 5 + App render). Falta: **polimento visual** (olho do JP via `yarn dev`), capas reais, prévia PDF, e **completar o dado** (13 nós → todas as fontes primárias).
 
 - **Deploy de app aninhado corrigido** ✅ — `scripts/compose-pages.sh` (fonte única) copia `apps/**/dist` (qualquer profundidade, exclui `node_modules`) → `.pages/apps/<path>`; `compose:pages` e `pages.yml` agora chamam o script. Verificado local: `apps/ohara/front` compõe em `.pages/apps/ohara/front/index.html` (deploy → `/apps/ohara/front/`). `clean` atualizado p/ `apps/*/*/dist`. `package-lock.json` removido (yarn-only).
