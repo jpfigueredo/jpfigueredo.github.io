@@ -53,4 +53,13 @@ describe('contrato do dado', () => {
     expect(trail.nodes.some((n) => n.year <= 1945)).toBe(true);
     expect(trail.nodes.some((n) => n.year >= 2020)).toBe(true);
   });
+
+  it('explicadores: existem, e todo explicador livre tem URL', () => {
+    const withRamps = trail.nodes.filter((n) => (n.explainers?.length ?? 0) > 0);
+    expect(withRamps.length).toBeGreaterThan(0);
+    const freeEx = trail.nodes.flatMap((n) => n.explainers ?? []).filter((e) => e.sourceType === 'free');
+    for (const e of freeEx) {
+      expect(typeof e.url === 'string' && e.url.startsWith('http')).toBe(true);
+    }
+  });
 });

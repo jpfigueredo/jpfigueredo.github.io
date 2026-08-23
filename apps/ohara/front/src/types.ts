@@ -11,6 +11,20 @@ export interface Source {
   note?: string;
 }
 
+/** Explicador = rampa de acesso (secundário), NÃO fonte primária nem nó do DAG. */
+export type ExplainerKind = 'article' | 'video' | 'book' | 'course' | 'interactive';
+
+export interface Explainer {
+  label: string;
+  author?: string;
+  kind: ExplainerKind;
+  sourceType: SourceType;
+  provider?: string;
+  url?: string;
+  query?: string;
+  note?: string;
+}
+
 export interface TrailNode {
   id: string;
   type: string;
@@ -19,6 +33,7 @@ export interface TrailNode {
   year: number;
   tags?: string[];
   sources: Source[];
+  explainers?: Explainer[];
 }
 
 export interface TrailEdge {

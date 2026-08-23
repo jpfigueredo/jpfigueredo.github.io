@@ -16,6 +16,9 @@ export function TrailNode({ p, onSelect }: { p: Positioned; onSelect: () => void
       whileTap={{ scale: 0.95 }}
     >
       <span className="node__aura" aria-hidden="true" />
+      {node.explainers && node.explainers.length > 0 ? (
+        <span className="node__ramp" aria-hidden="true">🌱</span>
+      ) : null}
       <span className="node__cover">
         <span className="node__cover-title">{node.label}</span>
       </span>

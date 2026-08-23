@@ -29,7 +29,8 @@
       "sources": [ { "sourceType": "free", "url": "https://lamport.azurewebsites.net/pubs/time-clocks.pdf", "note": "PDF oficial do autor" } ] },
 
     { "id": "flp-1985", "type": "paper", "label": "Impossibility of Distributed Consensus with One Faulty Process (FLP)", "author": "Fischer, Lynch, Paterson", "year": 1985, "tags": ["distributed-systems", "consensus"],
-      "sources": [ { "sourceType": "free", "url": "https://groups.csail.mit.edu/tds/papers/Lynch/jacm85.pdf", "note": "MIT CSAIL" } ] },
+      "sources": [ { "sourceType": "free", "url": "https://groups.csail.mit.edu/tds/papers/Lynch/jacm85.pdf", "note": "MIT CSAIL" } ],
+      "explainers": [ { "label": "Distributed Systems for Fun and Profit", "author": "Mikito Takada", "kind": "book", "sourceType": "free", "url": "https://book.mixu.net/distsys/", "note": "cobre consenso/impossibilidade de forma acessível" } ] },
 
     { "id": "gof-1994", "type": "book", "label": "Design Patterns: Elements of Reusable Object-Oriented Software", "author": "Gamma, Helm, Johnson, Vlissides", "year": 1994, "tags": ["patterns", "software-architecture"],
       "sources": [ { "sourceType": "retail", "provider": "amazon", "query": "Design Patterns Gamma Helm Johnson Vlissides" } ] },
@@ -41,7 +42,8 @@
       "sources": [ { "sourceType": "free", "url": "https://ics.uci.edu/~fielding/pubs/dissertation/fielding_dissertation.pdf", "note": "dissertação UC Irvine" } ] },
 
     { "id": "paxos-2001", "type": "paper", "label": "Paxos Made Simple", "author": "Leslie Lamport", "year": 2001, "tags": ["distributed-systems", "consensus"],
-      "sources": [ { "sourceType": "free", "url": "https://lamport.azurewebsites.net/pubs/paxos-simple.pdf", "note": "PDF oficial do autor" } ] },
+      "sources": [ { "sourceType": "free", "url": "https://lamport.azurewebsites.net/pubs/paxos-simple.pdf", "note": "PDF oficial do autor" } ],
+      "explainers": [ { "label": "Paxos lecture (Raft User Study)", "author": "Diego Ongaro", "kind": "video", "sourceType": "free", "url": "https://www.youtube.com/watch?v=JEpsBg0AO6o", "note": "palestra didática (Stanford)" }, { "label": "Distributed Systems for Fun and Profit", "author": "Mikito Takada", "kind": "book", "sourceType": "free", "url": "https://book.mixu.net/distsys/", "note": "livro grátis" } ] },
 
     { "id": "fowler-2002", "type": "book", "label": "Patterns of Enterprise Application Architecture", "author": "Martin Fowler", "year": 2002, "tags": ["patterns", "enterprise", "software-architecture"],
       "sources": [ { "sourceType": "retail", "provider": "amazon", "query": "Patterns of Enterprise Application Architecture Fowler" } ] },
@@ -56,25 +58,29 @@
       "sources": [ { "sourceType": "free", "url": "https://research.google.com/archive/mapreduce-osdi04.pdf", "note": "Google Research, OSDI'04" } ] },
 
     { "id": "dynamo-2007", "type": "paper", "label": "Dynamo: Amazon's Highly Available Key-value Store", "author": "DeCandia et al.", "year": 2007, "tags": ["distributed-systems", "replication", "consistency"],
-      "sources": [ { "sourceType": "free", "url": "https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf", "note": "All Things Distributed, SOSP'07" } ] },
+      "sources": [ { "sourceType": "free", "url": "https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf", "note": "All Things Distributed, SOSP'07" } ],
+      "explainers": [ { "label": "Distributed Systems for Fun and Profit", "author": "Mikito Takada", "kind": "book", "sourceType": "free", "url": "https://book.mixu.net/distsys/", "note": "cobre replicação / eventual consistency" } ] },
 
     { "id": "c4-model", "type": "standard", "label": "The C4 model for visualising software architecture", "author": "Simon Brown", "year": 2011, "tags": ["software-architecture", "modeling"],
       "sources": [ { "sourceType": "free", "url": "https://c4model.com", "note": "site oficial do autor (aberto)" } ] },
 
     { "id": "cap-2012", "type": "paper", "label": "Perspectives on the CAP Theorem", "author": "Seth Gilbert, Nancy Lynch", "year": 2012, "tags": ["distributed-systems", "consistency"],
-      "sources": [ { "sourceType": "free", "url": "https://groups.csail.mit.edu/tds/papers/Gilbert/Brewer2.pdf", "note": "MIT CSAIL" } ] },
+      "sources": [ { "sourceType": "free", "url": "https://groups.csail.mit.edu/tds/papers/Gilbert/Brewer2.pdf", "note": "MIT CSAIL" } ],
+      "explainers": [ { "label": "An Illustrated Proof of the CAP Theorem", "author": "Michael Whittaker", "kind": "article", "sourceType": "free", "url": "https://mwhittaker.github.io/blog/an_illustrated_proof_of_the_cap_theorem/", "note": "prova ilustrada" }, { "label": "Distributed Systems for Fun and Profit", "author": "Mikito Takada", "kind": "book", "sourceType": "free", "url": "https://book.mixu.net/distsys/" } ] },
 
     { "id": "spanner-2012", "type": "paper", "label": "Spanner: Google's Globally-Distributed Database", "author": "Corbett et al.", "year": 2012, "tags": ["distributed-systems", "data", "databases"],
       "sources": [ { "sourceType": "free", "url": "https://www.usenix.org/conference/osdi12/technical-sessions/presentation/corbett", "note": "USENIX OSDI'12 (aberto)" } ] },
 
     { "id": "raft-2014", "type": "paper", "label": "In Search of an Understandable Consensus Algorithm (Raft)", "author": "Diego Ongaro, John Ousterhout", "year": 2014, "tags": ["distributed-systems", "consensus"],
-      "sources": [ { "sourceType": "free", "url": "https://raft.github.io/raft.pdf", "note": "site oficial do Raft" } ] },
+      "sources": [ { "sourceType": "free", "url": "https://raft.github.io/raft.pdf", "note": "site oficial do Raft" } ],
+      "explainers": [ { "label": "The Secret Lives of Data — Raft", "kind": "interactive", "sourceType": "free", "url": "https://thesecretlivesofdata.com/raft/", "note": "visualização interativa" } ] },
 
     { "id": "martin-clean-arch-2017", "type": "book", "label": "Clean Architecture: A Craftsman's Guide to Software Structure and Design", "author": "Robert C. Martin", "year": 2017, "tags": ["software-architecture"],
       "sources": [ { "sourceType": "retail", "provider": "amazon", "query": "Clean Architecture Robert Martin" } ] },
 
     { "id": "kleppmann-2017", "type": "book", "label": "Designing Data-Intensive Applications", "author": "Martin Kleppmann", "year": 2017, "tags": ["distributed-systems", "data", "software-architecture"],
-      "sources": [ { "sourceType": "retail", "provider": "amazon", "query": "Designing Data-Intensive Applications Kleppmann" } ] },
+      "sources": [ { "sourceType": "retail", "provider": "amazon", "query": "Designing Data-Intensive Applications Kleppmann" } ],
+      "explainers": [ { "label": "System Design Interview – An Insider's Guide", "author": "Alex Xu", "kind": "book", "sourceType": "retail", "provider": "amazon", "query": "System Design Interview Alex Xu", "note": "on-ramp acessível pros conceitos" } ] },
 
     { "id": "richardson-2018", "type": "book", "label": "Microservices Patterns", "author": "Chris Richardson", "year": 2018, "tags": ["microservices", "software-architecture"],
       "sources": [ { "sourceType": "retail", "provider": "amazon", "query": "Microservices Patterns Chris Richardson" } ] },

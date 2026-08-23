@@ -99,6 +99,40 @@ export function NodeModal({
               </div>
             ) : null}
 
+            {node.explainers && node.explainers.length > 0 ? (
+              <div className="modal__section">
+                <h3>Entenda antes · rampas p/ iniciantes</h3>
+                <div className="modal__sources">
+                  {node.explainers.map((ex, i) => {
+                    const href =
+                      ex.url ??
+                      (ex.query
+                        ? `https://www.amazon.com.br/s?k=${encodeURIComponent(ex.query)}`
+                        : undefined);
+                    return (
+                      <div key={i} className="source">
+                        <span className="tag tag--explainer">{ex.kind}</span>
+                        <span className="source__note">
+                          {ex.label}
+                          {ex.author ? ` — ${ex.author}` : ''}
+                        </span>
+                        {href ? (
+                          <a
+                            className={`btn btn--${ex.sourceType === 'free' ? 'free' : 'retail'}`}
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {ex.sourceType === 'free' ? 'Abrir' : 'Adquirir'}
+                          </a>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
             <div className="modal__section">
               <h3>Fontes</h3>
               <div className="modal__sources">
