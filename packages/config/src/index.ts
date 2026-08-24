@@ -15,7 +15,7 @@ export const apps = {
   },
   angularDemo: {
     basePath: '/apps/angular-demo/',
-    iframeSrcProd: 'https://jpfigueredo.github.io/apps/angular-demo/index.html',
+    iframeSrcProd: 'https://jpfigueredo.github.io/apps/angular-demo/browser/index.html',
   },
 } as const;
 
