@@ -5,6 +5,8 @@ sessão/troca de informação.** Fatos verificados são marcados; suposições n
 
 ## 2026-08-22
 
+- **Home do portfólio redesenhada** ✅ — layout limpo estilo benscott.dev no **branding JP** (midnight `#0B0F1A` + azul `#2563EB` + laranja `#F97316` + sage): hero (nome + mote + role + socials), **cards de preview** (Ohara em destaque, Kafka Viz, Angular Demo) com 'Ver ao vivo' — o app só carrega ao entrar (não iframe na home, como o JP apontou). Stack + footer. Removido o clutter espacial (starfield sutil). Build do web verde. Deploy: Source já em 'GitHub Actions' → merge no `main` + push.
+
 - **Deploy quebrou e corrigido** — CI (`yarn install --frozen-lockfile`, Node 20) abortava: `@testing-library/jest-dom@6.10.0` exige Node >=22. Fixado em **`~6.4.0` → 6.4.8** (Node 20 ok), lockfile regenerado, 9 testes verdes. `.nojekyll` adicionado ao artefato. **Diagnóstico do Pages:** home servindo README via Jekyll + `/apps/ohara/front` em branco (index de fonte apontando p/ `/src/main.tsx`) → **fonte do Pages provavelmente em 'Deploy from a branch'**; precisa virar **'GitHub Actions'** (config do repo). Layout do portfólio a redesenhar (ref: benscott.dev + branding JP).
 
 - **Home do Ohara + no portfólio** ✅ — app ganhou **home (seletor de trilha)** → 'Arquitetura de Software' ativa → tela da trilha (26 nós) → voltar. O portfólio (`web/`) passa a **embutir o app Ohara real** (`apps/ohara/front` via `configApps.ohara`); removido o 'em construção'/tech-stack antigo. `packages/config` ganhou `ohara`. build (config→web+front) + 9 testes verdes. **Falta só merge da branch no `main`** p/ ir ao ar (auto-deploy do Pages).
