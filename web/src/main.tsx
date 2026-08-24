@@ -266,207 +266,132 @@ const Footer: React.FC = () => {
 };
 
 // Enhanced Homepage Component
+const PROJECTS = [
+  { key: 'swTimeline', to: '/projects/sw-timeline', tag: 'React · TS · DAG', accent: '#2563EB', icon: '🌳', featured: true },
+  { key: 'kafkaViz', to: '/projects/kafka-viz', tag: 'React · Kafka', accent: '#F97316', icon: '📡', featured: false },
+  { key: 'angularDemo', to: '/projects/angular-demo', tag: 'Angular 17', accent: '#94A388', icon: '🅰', featured: false },
+] as const;
+
+const STACK = ['Java', 'Kotlin', 'Spring', 'Kafka', 'Go', 'React', 'TypeScript', 'Kubernetes', 'AWS'];
+
 const Home = () => {
-  const [showHubbleOverlay, setShowHubbleOverlay] = useState(true);
-  const [imageError, setImageError] = useState(false);
   const { t } = useTranslation();
 
-  const handleToggleGalaxies = () => {
-    setShowHubbleOverlay(prev => !prev);
-  };
-
-  const hubbleImageUrl = 'https://images-assets.nasa.gov/image/hubble-ultra-deep-field-2014/Hubble_Ultra_Deep_Field_2014~large.jpg';
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 relative">
-      <StarfieldSVG density={280} showConstellations={true} />
-      
-      {/* Hubble overlay with high contrast - can be toggled (fixed position, outside section) */}
-      {showHubbleOverlay && (
-        <div
-          className="pointer-events-none fixed inset-0 bg-center bg-cover transition-opacity duration-500 opacity-[0.12] mix-blend-screen"
-          style={{
-            backgroundImage: imageError
-              ? 'none'
-              : `url('${hubbleImageUrl}')`,
-            backgroundColor: imageError
-              ? 'transparent'
-              : undefined,
-            filter: imageError ? 'none' : 'contrast(1.8) brightness(0.4) saturate(0.6)',
-            zIndex: 1,
-          }}
-          aria-hidden="true"
-        >
-          {/* Hidden img to detect load errors */}
-          <img
-            src={hubbleImageUrl}
-            alt=""
-            style={{ display: 'none' }}
-            onError={() => setImageError(true)}
-            onLoad={() => setImageError(false)}
-          />
-        </div>
-      )}
-      
-      {/* Top right controls: Language selector and Toggle galaxies button (fixed, highest z-index) */}
-      <div 
-        className="fixed top-4 right-4 flex items-center gap-3" 
-        style={{ zIndex: 10000, pointerEvents: 'auto' }}
-      >
-        {/* Language Selector */}
-        <div style={{ pointerEvents: 'auto' }}>
-          <LanguageSelector />
-        </div>
-        
-        {/* Enhanced Toggle button for Hubble overlay */}
-        <button
-          type="button"
-          onClick={handleToggleGalaxies}
-          className="group relative px-4 py-2.5 bg-slate-800/90 backdrop-blur-md border border-slate-600/50 rounded-lg text-slate-300 hover:text-neon hover:border-neon/60 transition-all duration-300 text-xs sm:text-sm flex items-center gap-2 shadow-lg hover:shadow-neon/20 hover:bg-slate-800/95 cursor-pointer"
-          style={{ 
-            pointerEvents: 'auto', 
-            zIndex: 10001,
-            position: 'relative',
-          }}
-          title={t('home.toggleGalaxies.label')}
-          aria-label={showHubbleOverlay ? t('home.toggleGalaxies.hide') : t('home.toggleGalaxies.show')}
-          aria-pressed={showHubbleOverlay}
-        >
-          <span className="text-lg transition-transform duration-300 group-hover:scale-110">🌌</span>
-          <span className="hidden sm:inline font-medium">
-            {showHubbleOverlay ? t('home.toggleGalaxies.hide') : t('home.toggleGalaxies.show')}
-          </span>
-          {/* Subtle glow effect on hover */}
-          <span className="absolute inset-0 rounded-lg bg-neon/0 group-hover:bg-neon/5 transition-colors duration-300 -z-10" />
-        </button>
+    <div className="min-h-screen bg-[#0B0F1A] text-[#F5F1E8] relative overflow-hidden">
+      <div className="opacity-40">
+        <StarfieldSVG density={70} showConstellations={false} />
       </div>
-      
-      {/* Hero Section */}
-      <section className="relative z-10 overflow-hidden">
-        <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-12 sm:py-16 md:py-20">
-        <div className="text-center mb-12 sm:mb-16">
-          <div className="inline-flex flex-col sm:flex-row items-center gap-3 sm:gap-4 mb-6">
-            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-neon to-magenta rounded-full flex items-center justify-center flex-shrink-0">
-              <span className="text-white font-bold text-2xl sm:text-3xl">JF</span>
-            </div>
-            <div className="text-center sm:text-left">
-              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-2">
-                João <span className="text-neon">Figueredo</span>
-              </h1>
-              <p className="text-base sm:text-lg md:text-xl text-slate-400">{t('header.subtitle')}</p>
-            </div>
-          </div>
-          
-          <p className="text-sm sm:text-base md:text-lg text-slate-300 max-w-3xl mx-auto mb-6 sm:mb-8 px-4">
+
+      <div className="fixed top-4 right-4" style={{ zIndex: 10000 }}>
+        <LanguageSelector />
+      </div>
+
+      <main className="relative z-10 max-w-5xl mx-auto px-5 sm:px-6">
+        {/* Hero */}
+        <section className="pt-24 sm:pt-32 pb-16 sm:pb-24">
+          <p className="font-mono text-xs tracking-[0.2em] uppercase text-[#F97316] mb-4">
+            Senior Software Engineer · Sistemas Distribuídos
+          </p>
+          <h1 className="text-4xl sm:text-6xl font-bold leading-[1.05] tracking-tight mb-5">
+            João Pedro<br />
+            <span className="text-[#2563EB]">Figueredo</span>
+          </h1>
+          <p className="text-lg sm:text-2xl text-[#94A388] italic mb-8">
+            &ldquo;Understand the past. Build the future.&rdquo;
+          </p>
+          <p className="text-base sm:text-lg text-[#c9c1b0] max-w-2xl mb-10">
             {t('home.description')}
           </p>
-          
-          <div className="flex flex-wrap justify-center gap-2 sm:gap-3 md:gap-4 mb-8 sm:mb-12 px-4">
-            <span className="px-3 py-1.5 sm:px-4 sm:py-2 bg-orange-500/20 text-orange-300 rounded-full text-xs sm:text-sm font-medium">Java</span>
-            <span className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gray-500/20 text-gray-300 rounded-full text-xs sm:text-sm font-medium">Kotlin</span>
-            <span className="px-3 py-1.5 sm:px-4 sm:py-2 bg-green-500/20 text-green-400 rounded-full text-xs sm:text-sm font-medium">Go</span>
-            <span className="px-3 py-1.5 sm:px-4 sm:py-2 bg-neon/20 text-neon rounded-full text-xs sm:text-sm font-medium">React</span>
-            <span className="px-3 py-1.5 sm:px-4 sm:py-2 bg-magenta/20 text-magenta rounded-full text-xs sm:text-sm font-medium">TypeScript</span>
-            <span className="px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-500/20 text-blue-400 rounded-full text-xs sm:text-sm font-medium">WebAssembly</span>
-            <span className="px-3 py-1.5 sm:px-4 sm:py-2 bg-purple-500/20 text-purple-400 rounded-full text-xs sm:text-sm font-medium">Node.js</span>
-          </div>
-        </div>
-        
-        {/* Featured Projects */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 md:gap-8 mb-12 sm:mb-16">
-          <div className="group bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-4 sm:p-6 hover:border-neon/50 transition-all duration-300">
-            <div className="flex items-center gap-3 mb-3 sm:mb-4">
-              <span className="text-2xl sm:text-3xl">📊</span>
-              <h3 className="text-lg sm:text-xl font-semibold text-white">{t('home.swTimeline.title')}</h3>
-            </div>
-            <p className="text-slate-400 text-sm sm:text-base mb-4">
-              {t('home.swTimeline.description')}
-            </p>
-            <Link
-              to="/projects/sw-timeline"
-              className="inline-flex items-center gap-2 text-neon hover:text-neon/80 transition-colors text-sm sm:text-base"
-            >
-              {t('common.viewProject')} <span className="text-lg">→</span>
-            </Link>
-          </div>
-
-          <div className="group bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-4 sm:p-6 hover:border-neon/50 transition-all duration-300">
-            <div className="flex items-center gap-3 mb-3 sm:mb-4">
-              <span className="text-2xl sm:text-3xl">📡</span>
-              <h3 className="text-lg sm:text-xl font-semibold text-white">{t('home.kafkaViz.title')}</h3>
-            </div>
-            <p className="text-slate-400 text-sm sm:text-base mb-4">
-              {t('home.kafkaViz.description')}
-            </p>
-            <Link
-              to="/projects/kafka-viz"
-              className="inline-flex items-center gap-2 text-neon hover:text-neon/80 transition-colors text-sm sm:text-base"
-            >
-              {t('common.viewProject')} <span className="text-lg">→</span>
-            </Link>
-          </div>
-
-          <div className="group bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-4 sm:p-6 hover:border-neon/50 transition-all duration-300">
-            <div className="flex items-center gap-3 mb-3 sm:mb-4">
-              <span className="text-2xl sm:text-3xl">🅰</span>
-              <h3 className="text-lg sm:text-xl font-semibold text-white">{t('home.angularDemo.title')}</h3>
-            </div>
-            <p className="text-slate-400 text-sm sm:text-base mb-4">
-              {t('home.angularDemo.description')}
-            </p>
-            <Link
-              to="/projects/angular-demo"
-              className="inline-flex items-center gap-2 text-neon hover:text-neon/80 transition-colors text-sm sm:text-base"
-            >
-              {t('common.viewProject')} <span className="text-lg">→</span>
-            </Link>
-          </div>
-        </div>
-        
-        {/* Stats Section */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 mb-12 sm:mb-16 px-4">
-          <div className="text-center">
-            <div className="text-2xl sm:text-3xl font-bold text-neon mb-1 sm:mb-2">5+</div>
-            <div className="text-slate-400 text-xs sm:text-sm">{t('home.stats.years')}</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl sm:text-3xl font-bold text-magenta mb-1 sm:mb-2">20+</div>
-            <div className="text-slate-400 text-xs sm:text-sm">{t('home.stats.projects')}</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl sm:text-3xl font-bold text-green-400 mb-1 sm:mb-2">10+</div>
-            <div className="text-slate-400 text-xs sm:text-sm">{t('home.stats.technologies')}</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl sm:text-3xl font-bold text-blue-400 mb-1 sm:mb-2">100%</div>
-            <div className="text-slate-400 text-xs sm:text-sm">{t('home.stats.dedication')}</div>
-          </div>
-        </div>
-        
-        {/* CTA Section */}
-        <div className="text-center px-4">
-          <h2 className="text-xl sm:text-2xl font-bold text-white mb-3 sm:mb-4">{t('home.cta.title')}</h2>
-          <p className="text-sm sm:text-base text-slate-400 mb-4 sm:mb-6">
-            {t('home.cta.description')}
-          </p>
-          <div className="flex flex-col sm:flex-row flex-wrap justify-center gap-3 sm:gap-4">
-            <a 
+          <div className="flex flex-wrap gap-3">
+            <a
               href="mailto:jp.figueredo8@gmail.com"
-              className="px-5 sm:px-6 py-2.5 sm:py-3 bg-neon text-black font-semibold rounded-lg hover:bg-neon/90 transition-colors text-sm sm:text-base"
+              className="px-6 py-3 bg-[#2563EB] text-white font-semibold rounded-lg hover:opacity-90 transition"
             >
-              {t('home.cta.sendEmail')}
+              Contato
             </a>
-            <a 
+            <a
               href="https://github.com/jpfigueredo"
-              className="px-5 sm:px-6 py-2.5 sm:py-3 border border-slate-600 text-white font-semibold rounded-lg hover:border-neon hover:text-neon transition-colors text-sm sm:text-base"
+              target="_blank"
+              rel="noreferrer"
+              className="px-6 py-3 border border-[#26314a] text-[#F5F1E8] font-semibold rounded-lg hover:border-[#F97316] transition"
             >
-              {t('home.cta.viewGitHub')}
+              GitHub
+            </a>
+            <a
+              href="https://linkedin.com/in/jpfigueredo"
+              target="_blank"
+              rel="noreferrer"
+              className="px-6 py-3 border border-[#26314a] text-[#F5F1E8] font-semibold rounded-lg hover:border-[#F97316] transition"
+            >
+              LinkedIn
             </a>
           </div>
-        </div>
-      </div>
-    </section>
-  </div>
+        </section>
+
+        {/* Projetos — preview cards (o app completo só carrega ao entrar) */}
+        <section className="pb-20 sm:pb-24">
+          <h2 className="text-sm font-mono tracking-[0.14em] uppercase text-[#94A388] mb-6">Projetos</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {PROJECTS.map((p) => (
+              <Link
+                key={p.key}
+                to={p.to}
+                className={`group rounded-2xl border border-[#1c2436] bg-[#0e1524] overflow-hidden hover:border-[#F97316]/70 transition-colors ${
+                  p.featured ? 'md:col-span-2' : ''
+                }`}
+              >
+                <div
+                  className="h-28 flex items-center justify-center text-4xl"
+                  style={{ background: `linear-gradient(135deg, ${p.accent}22, transparent 70%)` }}
+                >
+                  {p.icon}
+                </div>
+                <div className="p-5">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <h3 className="text-xl font-semibold">{t(`home.${p.key}.title`)}</h3>
+                    <span className="font-mono text-[11px] text-[#94A388] whitespace-nowrap">{p.tag}</span>
+                  </div>
+                  <p className="text-[#c9c1b0] text-sm mb-4">{t(`home.${p.key}.description`)}</p>
+                  <span
+                    className="inline-flex items-center gap-2 font-semibold text-sm"
+                    style={{ color: p.accent }}
+                  >
+                    Ver ao vivo
+                    <span className="transition-transform group-hover:translate-x-1">→</span>
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        {/* Stack */}
+        <section className="pb-20">
+          <h2 className="text-sm font-mono tracking-[0.14em] uppercase text-[#94A388] mb-4">Stack</h2>
+          <div className="flex flex-wrap gap-2">
+            {STACK.map((s) => (
+              <span
+                key={s}
+                className="px-3 py-1.5 rounded-full border border-[#1c2436] text-[#c9c1b0] text-sm font-mono"
+              >
+                {s}
+              </span>
+            ))}
+          </div>
+        </section>
+
+        {/* Footer */}
+        <footer className="border-t border-[#1c2436] py-8 text-[#94A388] text-sm flex flex-col sm:flex-row gap-2 sm:justify-between">
+          <span>© 2026 João Pedro Figueredo</span>
+          <span className="flex gap-4">
+            <a className="hover:text-[#F97316]" href="https://github.com/jpfigueredo" target="_blank" rel="noreferrer">GitHub</a>
+            <a className="hover:text-[#F97316]" href="https://linkedin.com/in/jpfigueredo" target="_blank" rel="noreferrer">LinkedIn</a>
+            <a className="hover:text-[#F97316]" href="mailto:jp.figueredo8@gmail.com">Email</a>
+          </span>
+        </footer>
+      </main>
+    </div>
   );
 };
 
