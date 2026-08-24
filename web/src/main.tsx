@@ -191,7 +191,7 @@ const IframeViewport: React.FC<{ src: string; title: string }> = ({ src, title }
       <iframe 
         title={title} 
         src={src} 
-        className="w-full h-[60vh] sm:h-[70vh] md:h-[80vh] border border-slate-600 rounded-lg"
+        className="w-full h-[78vh] sm:h-[82vh] md:h-[86vh] min-h-[520px] border border-slate-600 rounded-lg"
         allowFullScreen
       />
     </div>
