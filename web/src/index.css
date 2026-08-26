@@ -87,3 +87,23 @@ button {
 }
 
 .pulse-neon { animation: pulse-neon 2s ease-in-out infinite; }
+
+/* ── Interatividade (evolução: spotlight cards + nome com gradiente) ───── */
+.spotlight-card { position: relative; }
+.spotlight-card .spotlight {
+  position: absolute; inset: 0; z-index: 0; opacity: 0;
+  transition: opacity .35s ease; pointer-events: none;
+  background: radial-gradient(320px circle at var(--mx, 50%) var(--my, 50%),
+              color-mix(in srgb, var(--pc, #2563EB) 22%, transparent), transparent 45%);
+}
+.spotlight-card:hover .spotlight { opacity: 1; }
+
+.gradient-name {
+  background: linear-gradient(90deg, #2563EB, #F97316, #2563EB);
+  background-size: 200% 100%;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  animation: gradient-shimmer 7s linear infinite;
+}
+@keyframes gradient-shimmer { to { background-position: 200% 0; } }
+@media (prefers-reduced-motion: reduce) { .gradient-name { animation: none; } }
