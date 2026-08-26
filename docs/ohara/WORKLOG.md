@@ -5,6 +5,8 @@ sessão/troca de informação.** Fatos verificados são marcados; suposições n
 
 ## 2026-08-22
 
+- **Preview vivo + largura** — cada card virou uma **janela** (barra com dots + 🌳 label + "ver ao vivo →") com o **app rodando de verdade** dentro, **read-only** (`pointer-events:none` → não edita, só clica pra abrir o completo). **Lazy-load** por IntersectionObserver + **spinner** até carregar; iframe 2× com `scale(.5)` = thumbnail do app real. Container **1024→1280px** (max-w-7xl), menos margem lateral. web builda. *(previews carregam os apps deployados; Angular sai do 404 no próximo deploy.)*
+
 - **Homepage zig-zag (captar recruiter)** — grid simples → linhas alternadas (preview de um lado, descrição rica do outro). `ProjectCard` virou **tile de preview** (ícone escala no hover, "Ver ao vivo" revela, focus-ring acessível, spotlight mantido). Novo `ProjectDescription`: rótulo "PROJETO 0N", stack chips, **blurb de motivação** + lista das **-ilities** (Kleppmann/DDIA) — EN/PT no i18n. Claims mantidos verificáveis (proibido inventar): Kafka suavizado p/ o que o app mostra. web builda.
 
 - **Interatividade (1ª camada, refs reactbits/uiverse/21st)** — evolução, não reescrita. Cards de projeto viraram **spotlight cards** (brilho radial na cor de acento seguindo o cursor) e o nome ganhou **gradiente animado** (azul→laranja). Tudo self-contained (CSS + um `onMouseMove`, sem CDN) e com `prefers-reduced-motion`. web builda.
