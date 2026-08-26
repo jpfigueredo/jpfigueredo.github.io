@@ -5,6 +5,8 @@ sessão/troca de informação.** Fatos verificados são marcados; suposições n
 
 ## 2026-08-22
 
+- **Homepage zig-zag (captar recruiter)** — grid simples → linhas alternadas (preview de um lado, descrição rica do outro). `ProjectCard` virou **tile de preview** (ícone escala no hover, "Ver ao vivo" revela, focus-ring acessível, spotlight mantido). Novo `ProjectDescription`: rótulo "PROJETO 0N", stack chips, **blurb de motivação** + lista das **-ilities** (Kleppmann/DDIA) — EN/PT no i18n. Claims mantidos verificáveis (proibido inventar): Kafka suavizado p/ o que o app mostra. web builda.
+
 - **Interatividade (1ª camada, refs reactbits/uiverse/21st)** — evolução, não reescrita. Cards de projeto viraram **spotlight cards** (brilho radial na cor de acento seguindo o cursor) e o nome ganhou **gradiente animado** (azul→laranja). Tudo self-contained (CSS + um `onMouseMove`, sem CDN) e com `prefers-reduced-motion`. web builda.
 
 - **Deploy no ar + ajustes de iframe** — Ohara renderiza o DAG publicado 🎉. Corrigidos: **Angular 404** (build quebrava no `@import` de fonte externa → removido; e o dist do Angular fica em `/browser/`, config apontava p/ a raiz → corrigido); **iframe mais alto** (78–86vh + min 520px). web+angular buildam. **Pendência:** home redesenhada + Ohara com home-selector **ainda não no ar** (root deployado = design antigo) → falta **merge da branch no main + push**.
