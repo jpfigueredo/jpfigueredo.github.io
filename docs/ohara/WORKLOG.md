@@ -5,6 +5,8 @@ sessão/troca de informação.** Fatos verificados são marcados; suposições n
 
 ## 2026-08-22
 
+- **Interatividade (1ª camada, refs reactbits/uiverse/21st)** — evolução, não reescrita. Cards de projeto viraram **spotlight cards** (brilho radial na cor de acento seguindo o cursor) e o nome ganhou **gradiente animado** (azul→laranja). Tudo self-contained (CSS + um `onMouseMove`, sem CDN) e com `prefers-reduced-motion`. web builda.
+
 - **Deploy no ar + ajustes de iframe** — Ohara renderiza o DAG publicado 🎉. Corrigidos: **Angular 404** (build quebrava no `@import` de fonte externa → removido; e o dist do Angular fica em `/browser/`, config apontava p/ a raiz → corrigido); **iframe mais alto** (78–86vh + min 520px). web+angular buildam. **Pendência:** home redesenhada + Ohara com home-selector **ainda não no ar** (root deployado = design antigo) → falta **merge da branch no main + push**.
 
 - **Home do portfólio redesenhada** ✅ — layout limpo estilo benscott.dev no **branding JP** (midnight `#0B0F1A` + azul `#2563EB` + laranja `#F97316` + sage): hero (nome + mote + role + socials), **cards de preview** (Ohara em destaque, Kafka Viz, Angular Demo) com 'Ver ao vivo' — o app só carrega ao entrar (não iframe na home, como o JP apontou). Stack + footer. Removido o clutter espacial (starfield sutil). Build do web verde. Deploy: Source já em 'GitHub Actions' → merge no `main` + push.
