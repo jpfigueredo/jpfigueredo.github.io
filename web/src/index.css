@@ -107,3 +107,27 @@ button {
 }
 @keyframes gradient-shimmer { to { background-position: 200% 0; } }
 @media (prefers-reduced-motion: reduce) { .gradient-name { animation: none; } }
+
+/* ── Preview vivo do app (janela + iframe read-only + loading) ─────────── */
+.preview-viewport { position: relative; width: 100%; aspect-ratio: 16 / 10; overflow: hidden; background: #0b111e; }
+.preview-frame {
+  position: absolute; top: 0; left: 0;
+  width: 200%; height: 200%;
+  transform: scale(0.5); transform-origin: top left;
+  border: 0; pointer-events: none;              /* read-only: cliques passam pro card */
+  transition: opacity .45s ease;
+}
+.preview-skeleton { position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center; background: #0b111e; }
+.preview-spin {
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, .10);
+  border-top-color: var(--pc, #2563EB);
+  animation: preview-spin .8s linear infinite;
+}
+@keyframes preview-spin { to { transform: rotate(360deg); } }
+.preview-chrome { display: flex; align-items: center; gap: 10px; padding: 9px 13px; background: #0e1524; border-bottom: 1px solid #1c2436; }
+.preview-dots { display: inline-flex; gap: 6px; }
+.preview-dots i { width: 10px; height: 10px; border-radius: 50%; background: #2a3550; }
+.preview-chrome__label { font: 500 12px/1 ui-monospace, Menlo, monospace; color: #94A388; letter-spacing: .02em; }
+.preview-chrome__cta { margin-left: auto; font: 600 12px/1 ui-monospace, Menlo, monospace; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .preview-spin { animation: none; } }

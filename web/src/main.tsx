@@ -267,14 +267,60 @@ const Footer: React.FC = () => {
 
 // Enhanced Homepage Component
 const PROJECTS = [
-  { key: 'swTimeline', to: '/projects/sw-timeline', accent: '#2563EB', icon: '🌳', stack: ['React', 'TypeScript', 'DAG', 'Vitest'] },
-  { key: 'kafkaViz', to: '/projects/kafka-viz', accent: '#F97316', icon: '📡', stack: ['React', 'TypeScript', 'Canvas'] },
-  { key: 'angularDemo', to: '/projects/angular-demo', accent: '#94A388', icon: '🅰', stack: ['Angular 17', 'Signals', 'RxJS'] },
+  { key: 'swTimeline', to: '/projects/sw-timeline', accent: '#2563EB', icon: '🌳', stack: ['React', 'TypeScript', 'DAG', 'Vitest'], src: configApps.ohara.iframeSrcProd },
+  { key: 'kafkaViz', to: '/projects/kafka-viz', accent: '#F97316', icon: '📡', stack: ['React', 'TypeScript', 'Canvas'], src: configApps.kafkaViz.iframeSrcProd },
+  { key: 'angularDemo', to: '/projects/angular-demo', accent: '#94A388', icon: '🅰', stack: ['Angular 17', 'Signals', 'RxJS'], src: configApps.angularDemo.iframeSrcProd },
 ] as const;
 
 const STACK = ['Java', 'Kotlin', 'Spring', 'Kafka', 'Go', 'React', 'TypeScript', 'Kubernetes', 'AWS'];
 
-// Card = tile de preview clicável (spotlight segue o cursor). O texto rico vive no ProjectDescription.
+// Preview vivo do app rodando em modo default (read-only). Lazy-load (IntersectionObserver)
+// + spinner até carregar. Escala 0.5 (iframe 2×) pra virar um "thumbnail" do app real.
+const LivePreview: React.FC<{ src: string; label: string }> = ({ src, label }) => {
+  const [loaded, setLoaded] = React.useState(false);
+  const [inView, setInView] = React.useState(false);
+  const boxRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setInView(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: '250px' },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return (
+    <div ref={boxRef} className="preview-viewport">
+      {!loaded && (
+        <div className="preview-skeleton">
+          <span className="preview-spin" aria-hidden="true" />
+        </div>
+      )}
+      {inView && (
+        <iframe
+          src={src}
+          title={label}
+          loading="lazy"
+          tabIndex={-1}
+          aria-hidden="true"
+          scrolling="no"
+          onLoad={() => setLoaded(true)}
+          className="preview-frame"
+          style={{ opacity: loaded ? 1 : 0 }}
+        />
+      )}
+    </div>
+  );
+};
+
+// Card = "janela" com o app rodando de verdade (não editável). Spotlight segue o cursor;
+// clique em qualquer ponto abre o app completo (com menu/controles).
 const ProjectCard: React.FC<{ p: (typeof PROJECTS)[number] }> = ({ p }) => {
   const { t } = useTranslation();
   const ref = React.useRef<HTMLAnchorElement>(null);
@@ -285,34 +331,32 @@ const ProjectCard: React.FC<{ p: (typeof PROJECTS)[number] }> = ({ p }) => {
     el.style.setProperty('--mx', `${e.clientX - r.left}px`);
     el.style.setProperty('--my', `${e.clientY - r.top}px`);
   };
+  const title = t(`home.${p.key}.title`);
   return (
     <Link
       ref={ref}
       to={p.to}
       onMouseMove={handleMove}
-      aria-label={`${t(`home.${p.key}.title`)} — ${t('home.viewLive')}`}
-      className="spotlight-card group block rounded-2xl border border-[#1c2436] bg-[#0e1524] overflow-hidden hover:border-[color:var(--pc)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--pc)]"
+      aria-label={`${title} — ${t('home.viewLive')}`}
+      className="spotlight-card group block rounded-xl border border-[#1c2436] bg-[#0b111e] overflow-hidden shadow-xl shadow-black/30 hover:border-[color:var(--pc)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--pc)]"
       style={{ ['--pc' as string]: p.accent } as React.CSSProperties}
     >
       <span className="spotlight" aria-hidden="true" />
-      <div
-        className="relative z-10 aspect-[16/10] flex items-center justify-center"
-        style={{ background: `radial-gradient(120% 120% at 30% 0%, ${p.accent}26, transparent 60%), #0b111e` }}
-      >
-        <span className="text-6xl sm:text-7xl drop-shadow-lg transition-transform duration-300 group-hover:scale-110">
-          {p.icon}
-        </span>
-        <span className="absolute inset-x-0 bottom-0 flex items-center justify-between px-4 py-3 bg-gradient-to-t from-[#0b111e] to-transparent">
-          <span className="font-mono text-[11px] uppercase tracking-wider text-white/55">
-            {p.stack[0]} · {p.stack[1]}
+      <div className="relative z-10">
+        <div className="preview-chrome">
+          <span className="preview-dots" aria-hidden="true">
+            <i />
+            <i />
+            <i />
           </span>
-          <span
-            className="inline-flex items-center gap-1 font-semibold text-sm opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all"
-            style={{ color: p.accent }}
-          >
+          <span className="preview-chrome__label">
+            {p.icon} {title.toLowerCase()}
+          </span>
+          <span className="preview-chrome__cta" style={{ color: p.accent }}>
             {t('home.viewLive')} →
           </span>
-        </span>
+        </div>
+        <LivePreview src={p.src} label={title} />
       </div>
     </Link>
   );
@@ -366,7 +410,7 @@ const Home = () => {
         <LanguageSelector />
       </div>
 
-      <main className="relative z-10 max-w-5xl mx-auto px-5 sm:px-6">
+      <main className="relative z-10 max-w-7xl mx-auto px-5 sm:px-8">
         {/* Hero */}
         <section className="pt-24 sm:pt-32 pb-16 sm:pb-24">
           <p className="font-mono text-xs tracking-[0.2em] uppercase text-[#F97316] mb-4">
