@@ -267,13 +267,14 @@ const Footer: React.FC = () => {
 
 // Enhanced Homepage Component
 const PROJECTS = [
-  { key: 'swTimeline', to: '/projects/sw-timeline', tag: 'React · TS · DAG', accent: '#2563EB', icon: '🌳', featured: true },
-  { key: 'kafkaViz', to: '/projects/kafka-viz', tag: 'React · Kafka', accent: '#F97316', icon: '📡', featured: false },
-  { key: 'angularDemo', to: '/projects/angular-demo', tag: 'Angular 17', accent: '#94A388', icon: '🅰', featured: false },
+  { key: 'swTimeline', to: '/projects/sw-timeline', accent: '#2563EB', icon: '🌳', stack: ['React', 'TypeScript', 'DAG', 'Vitest'] },
+  { key: 'kafkaViz', to: '/projects/kafka-viz', accent: '#F97316', icon: '📡', stack: ['React', 'TypeScript', 'Canvas'] },
+  { key: 'angularDemo', to: '/projects/angular-demo', accent: '#94A388', icon: '🅰', stack: ['Angular 17', 'Signals', 'RxJS'] },
 ] as const;
 
 const STACK = ['Java', 'Kotlin', 'Spring', 'Kafka', 'Go', 'React', 'TypeScript', 'Kubernetes', 'AWS'];
 
+// Card = tile de preview clicável (spotlight segue o cursor). O texto rico vive no ProjectDescription.
 const ProjectCard: React.FC<{ p: (typeof PROJECTS)[number] }> = ({ p }) => {
   const { t } = useTranslation();
   const ref = React.useRef<HTMLAnchorElement>(null);
@@ -289,35 +290,66 @@ const ProjectCard: React.FC<{ p: (typeof PROJECTS)[number] }> = ({ p }) => {
       ref={ref}
       to={p.to}
       onMouseMove={handleMove}
-      className={`spotlight-card group rounded-2xl border border-[#1c2436] bg-[#0e1524] overflow-hidden hover:border-[#F97316]/70 transition-colors ${
-        p.featured ? 'md:col-span-2' : ''
-      }`}
+      aria-label={`${t(`home.${p.key}.title`)} — ${t('home.viewLive')}`}
+      className="spotlight-card group block rounded-2xl border border-[#1c2436] bg-[#0e1524] overflow-hidden hover:border-[color:var(--pc)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--pc)]"
       style={{ ['--pc' as string]: p.accent } as React.CSSProperties}
     >
       <span className="spotlight" aria-hidden="true" />
-      <div className="relative z-10">
-        <div
-          className="h-28 flex items-center justify-center text-4xl"
-          style={{ background: `linear-gradient(135deg, ${p.accent}22, transparent 70%)` }}
-        >
+      <div
+        className="relative z-10 aspect-[16/10] flex items-center justify-center"
+        style={{ background: `radial-gradient(120% 120% at 30% 0%, ${p.accent}26, transparent 60%), #0b111e` }}
+      >
+        <span className="text-6xl sm:text-7xl drop-shadow-lg transition-transform duration-300 group-hover:scale-110">
           {p.icon}
-        </div>
-        <div className="p-5">
-          <div className="flex items-center justify-between gap-3 mb-2">
-            <h3 className="text-xl font-semibold">{t(`home.${p.key}.title`)}</h3>
-            <span className="font-mono text-[11px] text-[#94A388] whitespace-nowrap">{p.tag}</span>
-          </div>
-          <p className="text-[#c9c1b0] text-sm mb-4">{t(`home.${p.key}.description`)}</p>
+        </span>
+        <span className="absolute inset-x-0 bottom-0 flex items-center justify-between px-4 py-3 bg-gradient-to-t from-[#0b111e] to-transparent">
+          <span className="font-mono text-[11px] uppercase tracking-wider text-white/55">
+            {p.stack[0]} · {p.stack[1]}
+          </span>
           <span
-            className="inline-flex items-center gap-2 font-semibold text-sm"
+            className="inline-flex items-center gap-1 font-semibold text-sm opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all"
             style={{ color: p.accent }}
           >
-            Ver ao vivo
-            <span className="transition-transform group-hover:translate-x-1">→</span>
+            {t('home.viewLive')} →
           </span>
-        </div>
+        </span>
       </div>
     </Link>
+  );
+};
+
+// Bloco de texto rico: motivação + as -ilities (Kleppmann) que cada projeto demonstra.
+const ProjectDescription: React.FC<{ p: (typeof PROJECTS)[number]; index: number }> = ({ p, index }) => {
+  const { t } = useTranslation();
+  const highlights = t(`home.${p.key}.highlights`, { returnObjects: true }) as unknown as string[];
+  return (
+    <div>
+      <p className="font-mono text-xs tracking-[0.2em] uppercase mb-2" style={{ color: p.accent }}>
+        {t('home.projectLabel')} {String(index + 1).padStart(2, '0')}
+      </p>
+      <h3 className="text-2xl sm:text-3xl font-bold tracking-tight mb-3">{t(`home.${p.key}.title`)}</h3>
+      <div className="flex flex-wrap gap-2 mb-4">
+        {p.stack.map((s) => (
+          <span key={s} className="px-2.5 py-1 rounded-md border border-[#1c2436] text-[#94A388] text-xs font-mono">
+            {s}
+          </span>
+        ))}
+      </div>
+      <p className="text-[#c9c1b0] leading-relaxed mb-5">{t(`home.${p.key}.blurb`)}</p>
+      <ul className="space-y-2 mb-6">
+        {Array.isArray(highlights) &&
+          highlights.map((h) => (
+            <li key={h} className="flex items-start gap-2.5 text-sm text-[#d8d2c4]">
+              <span className="mt-0.5 shrink-0" style={{ color: p.accent }} aria-hidden="true">✓</span>
+              <span>{h}</span>
+            </li>
+          ))}
+      </ul>
+      <Link to={p.to} className="inline-flex items-center gap-2 font-semibold group/link" style={{ color: p.accent }}>
+        {t('home.explore')}
+        <span className="transition-transform group-hover/link:translate-x-1">→</span>
+      </Link>
+    </div>
   );
 };
 
@@ -376,12 +408,21 @@ const Home = () => {
           </div>
         </section>
 
-        {/* Projetos — preview cards (o app completo só carrega ao entrar) */}
-        <section className="pb-20 sm:pb-24">
-          <h2 className="text-sm font-mono tracking-[0.14em] uppercase text-[#94A388] mb-6">Projetos</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {PROJECTS.map((p) => (
-              <ProjectCard key={p.key} p={p} />
+        {/* Projetos — zig-zag: preview de um lado, descrição rica do outro (alterna) */}
+        <section className="pb-20 sm:pb-28">
+          <h2 className="text-sm font-mono tracking-[0.14em] uppercase text-[#94A388] mb-10">
+            {t('home.projectsTitle')}
+          </h2>
+          <div className="space-y-16 sm:space-y-24">
+            {PROJECTS.map((p, i) => (
+              <div key={p.key} className="grid md:grid-cols-2 gap-8 md:gap-14 items-center">
+                <div className={i % 2 === 1 ? 'md:order-2' : ''}>
+                  <ProjectCard p={p} />
+                </div>
+                <div className={i % 2 === 1 ? 'md:order-1' : ''}>
+                  <ProjectDescription p={p} index={i} />
+                </div>
+              </div>
             ))}
           </div>
         </section>

@@ -20,7 +20,14 @@
     },
     "swTimeline": {
       "title": "Ohara",
-      "description": "Interactive Software Engineering timeline connecting patterns, anti-patterns, and paradigms through primary sources and constellation visualizations."
+      "description": "Interactive Software Engineering timeline connecting patterns, anti-patterns, and paradigms through primary sources and constellation visualizations.",
+      "blurb": "Born from a simple question: where does each idea in software actually come from? Ohara maps the genealogy of computing as a directed acyclic graph of primary sources — from Turing (1936) to modern distributed systems — turning scattered papers into guided study trails.",
+      "highlights": [
+        "Topological sort with cycle detection over the citation graph",
+        "Verified primary sources only — provenance-labeled, never invented",
+        "Accessible & responsive: keyboard-navigable nodes, reduced-motion aware",
+        "Decoupled by design: external-configuration pattern, tested with Vitest"
+      ]
     },
     "stats": {
       "years": "Years of Experience",
@@ -41,12 +48,30 @@
     },
     "kafkaViz": {
       "title": "Kafka Viz",
-      "description": "Real-time visual simulation of an Apache Kafka cluster — topics, partitions, producers and consumers with animated messages."
+      "description": "Real-time visual simulation of an Apache Kafka cluster — topics, partitions, producers and consumers with animated messages.",
+      "blurb": "Distributed messaging is hard to grasp from a static diagram. Kafka Viz turns an Apache Kafka cluster into a living picture — watch messages flow through topics and partitions, consumer groups rebalance, and offsets advance in real time.",
+      "highlights": [
+        "Faithful model of partitions, consumer groups and offsets",
+        "Smooth, real-time animation of message flow",
+        "Consumer lag and message routing visualized live",
+        "Built in React + TypeScript, zero backend required"
+      ]
     },
     "angularDemo": {
       "title": "Angular Demo",
-      "description": "Tech Stack Explorer built with Angular 17+ using standalone components, Signals, Reactive Forms and HttpClient demonstrating real-world patterns."
-    }
+      "description": "Tech Stack Explorer built with Angular 17+ using standalone components, Signals, Reactive Forms and HttpClient demonstrating real-world patterns.",
+      "blurb": "A focused showcase of where Angular is heading. Built on Angular 17+ with standalone components and the new control flow, it demonstrates modern, testable patterns end to end — no NgModules, no boilerplate.",
+      "highlights": [
+        "Standalone components with the new @for / @if control flow",
+        "Reactive state with Signals — fine-grained, predictable updates",
+        "Typed Reactive Forms and HttpClient with real-world structure",
+        "Maintainable & testable: clear separation of concerns"
+      ]
+    },
+    "projectsTitle": "Projects",
+    "projectLabel": "Project",
+    "viewLive": "View live",
+    "explore": "Explore project"
   },
   "goom64": {
     "title": "GOOM64",
@@ -112,4 +137,3 @@
     }
   }
 }
-
