@@ -20,7 +20,14 @@
     },
     "swTimeline": {
       "title": "Ohara",
-      "description": "Trilhas de leitura sobre fontes primárias: um DAG da genealogia das ideias, do fundamental ao moderno — com prévia, referências e caminho de estudo."
+      "description": "Trilhas de leitura sobre fontes primárias: um DAG da genealogia das ideias, do fundamental ao moderno — com prévia, referências e caminho de estudo.",
+      "blurb": "Nasceu de uma pergunta simples: de onde vem, de fato, cada ideia da computação? Ohara mapeia a genealogia das ideias como um grafo acíclico dirigido de fontes primárias — de Turing (1936) aos sistemas distribuídos modernos — transformando papers dispersos em trilhas de estudo guiadas.",
+      "highlights": [
+        "Ordenação topológica com detecção de ciclos sobre o grafo de citações",
+        "Só fontes primárias verificadas — com proveniência rotulada, proibido inventar",
+        "Acessível e responsivo: nós navegáveis por teclado, respeita reduced-motion",
+        "Desacoplado por design: external-configuration pattern, testado com Vitest"
+      ]
     },
     "stats": {
       "years": "Anos de Experiência",
@@ -41,12 +48,30 @@
     },
     "kafkaViz": {
       "title": "Kafka Viz",
-      "description": "Simulação visual de um cluster Apache Kafka em tempo real — tópicos, partições, producers e consumers com animação de mensagens."
+      "description": "Simulação visual de um cluster Apache Kafka em tempo real — tópicos, partições, producers e consumers com animação de mensagens.",
+      "blurb": "Mensageria distribuída é difícil de entender num diagrama estático. Kafka Viz transforma um cluster Apache Kafka numa imagem viva — veja mensagens fluindo por tópicos e partições, consumer groups rebalanceando e offsets avançando em tempo real.",
+      "highlights": [
+        "Modelo fiel de partições, consumer groups e offsets",
+        "Animação fluida do fluxo de mensagens em tempo real",
+        "Lag de consumo e roteamento de mensagens visíveis ao vivo",
+        "Feito em React + TypeScript, sem backend"
+      ]
     },
     "angularDemo": {
       "title": "Angular Demo",
-      "description": "Tech Stack Explorer em Angular 17+ com standalone components, Signals, Reactive Forms e HttpClient demonstrando padrões reais."
-    }
+      "description": "Tech Stack Explorer em Angular 17+ com standalone components, Signals, Reactive Forms e HttpClient demonstrando padrões reais.",
+      "blurb": "Uma vitrine enxuta de para onde o Angular está indo. Construído em Angular 17+ com standalone components e o novo control flow, demonstra padrões modernos e testáveis de ponta a ponta — sem NgModules, sem boilerplate.",
+      "highlights": [
+        "Standalone components com o novo control flow @for / @if",
+        "Estado reativo com Signals — atualizações granulares e previsíveis",
+        "Reactive Forms tipados e HttpClient com estrutura de mundo real",
+        "Manutenível e testável: separação clara de responsabilidades"
+      ]
+    },
+    "projectsTitle": "Projetos",
+    "projectLabel": "Projeto",
+    "viewLive": "Ver ao vivo",
+    "explore": "Explorar projeto"
   },
   "goom64": {
     "title": "GOOM64",
@@ -112,4 +137,3 @@
     }
   }
 }
-
