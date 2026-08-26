@@ -274,6 +274,53 @@ const PROJECTS = [
 
 const STACK = ['Java', 'Kotlin', 'Spring', 'Kafka', 'Go', 'React', 'TypeScript', 'Kubernetes', 'AWS'];
 
+const ProjectCard: React.FC<{ p: (typeof PROJECTS)[number] }> = ({ p }) => {
+  const { t } = useTranslation();
+  const ref = React.useRef<HTMLAnchorElement>(null);
+  const handleMove = (e: React.MouseEvent) => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    el.style.setProperty('--mx', `${e.clientX - r.left}px`);
+    el.style.setProperty('--my', `${e.clientY - r.top}px`);
+  };
+  return (
+    <Link
+      ref={ref}
+      to={p.to}
+      onMouseMove={handleMove}
+      className={`spotlight-card group rounded-2xl border border-[#1c2436] bg-[#0e1524] overflow-hidden hover:border-[#F97316]/70 transition-colors ${
+        p.featured ? 'md:col-span-2' : ''
+      }`}
+      style={{ ['--pc' as string]: p.accent } as React.CSSProperties}
+    >
+      <span className="spotlight" aria-hidden="true" />
+      <div className="relative z-10">
+        <div
+          className="h-28 flex items-center justify-center text-4xl"
+          style={{ background: `linear-gradient(135deg, ${p.accent}22, transparent 70%)` }}
+        >
+          {p.icon}
+        </div>
+        <div className="p-5">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <h3 className="text-xl font-semibold">{t(`home.${p.key}.title`)}</h3>
+            <span className="font-mono text-[11px] text-[#94A388] whitespace-nowrap">{p.tag}</span>
+          </div>
+          <p className="text-[#c9c1b0] text-sm mb-4">{t(`home.${p.key}.description`)}</p>
+          <span
+            className="inline-flex items-center gap-2 font-semibold text-sm"
+            style={{ color: p.accent }}
+          >
+            Ver ao vivo
+            <span className="transition-transform group-hover:translate-x-1">→</span>
+          </span>
+        </div>
+      </div>
+    </Link>
+  );
+};
+
 const Home = () => {
   const { t } = useTranslation();
 
@@ -295,7 +342,7 @@ const Home = () => {
           </p>
           <h1 className="text-4xl sm:text-6xl font-bold leading-[1.05] tracking-tight mb-5">
             João Pedro<br />
-            <span className="text-[#2563EB]">Figueredo</span>
+            <span className="gradient-name">Figueredo</span>
           </h1>
           <p className="text-lg sm:text-2xl text-[#94A388] italic mb-8">
             &ldquo;Understand the past. Build the future.&rdquo;
@@ -334,34 +381,7 @@ const Home = () => {
           <h2 className="text-sm font-mono tracking-[0.14em] uppercase text-[#94A388] mb-6">Projetos</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {PROJECTS.map((p) => (
-              <Link
-                key={p.key}
-                to={p.to}
-                className={`group rounded-2xl border border-[#1c2436] bg-[#0e1524] overflow-hidden hover:border-[#F97316]/70 transition-colors ${
-                  p.featured ? 'md:col-span-2' : ''
-                }`}
-              >
-                <div
-                  className="h-28 flex items-center justify-center text-4xl"
-                  style={{ background: `linear-gradient(135deg, ${p.accent}22, transparent 70%)` }}
-                >
-                  {p.icon}
-                </div>
-                <div className="p-5">
-                  <div className="flex items-center justify-between gap-3 mb-2">
-                    <h3 className="text-xl font-semibold">{t(`home.${p.key}.title`)}</h3>
-                    <span className="font-mono text-[11px] text-[#94A388] whitespace-nowrap">{p.tag}</span>
-                  </div>
-                  <p className="text-[#c9c1b0] text-sm mb-4">{t(`home.${p.key}.description`)}</p>
-                  <span
-                    className="inline-flex items-center gap-2 font-semibold text-sm"
-                    style={{ color: p.accent }}
-                  >
-                    Ver ao vivo
-                    <span className="transition-transform group-hover:translate-x-1">→</span>
-                  </span>
-                </div>
-              </Link>
+              <ProjectCard key={p.key} p={p} />
             ))}
           </div>
         </section>
