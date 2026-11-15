@@ -18,10 +18,11 @@ permissions: {}
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Trigger Render deploy
         env:
           RENDER_BFF_HOOK: ${{ secrets.RENDER_BFF_HOOK }}
         run: |
           test -n "$RENDER_BFF_HOOK" || { echo "::error::RENDER_BFF_HOOK is not set"; exit 1; }
-          curl --fail --silent --show-error -X POST "$RENDER_BFF_HOOK"
+          curl --fail --silent --show-error --max-time 30 -X POST "$RENDER_BFF_HOOK"
