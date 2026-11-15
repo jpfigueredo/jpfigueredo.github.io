@@ -1,11 +1,15 @@
+# Reference for the Render service settings (the service is configured in the
+# Render dashboard; keep both in sync). Root directory: repository root.
+# Node version: Render reads .nvmrc at the repository root (no NODE_VERSION
+# override); the build script fails if the Node major differs from .nvmrc.
 services:
   - type: web
     name: jpfig-bff-api
     runtime: node
     region: ohio
     plan: free
-    buildCommand: cd services/bff-api && npm install
-    startCommand: cd services/bff-api && npm start
+    buildCommand: bash services/bff-api/scripts/render-build.sh
+    startCommand: cd services/bff-api && node src/index.js
     envVars:
       - key: NODE_ENV
         value: production
