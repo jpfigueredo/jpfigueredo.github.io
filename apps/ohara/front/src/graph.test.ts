@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { loadTrail } from './data/loadTrail';
 import { buildLayout, connections } from './domain/graph';
-import { primaryState } from './types';
 
 const trail = loadTrail();
 
