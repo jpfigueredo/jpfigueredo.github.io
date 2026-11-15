@@ -63,6 +63,11 @@ jobs:
           # The repo is yarn 1 only (packageManager: yarn@1.22.22).
           yarn --version | grep -q '^1\.'
 
+      - name: Check package.json files against yarn.lock
+        # Same check the production build of bff-api runs before installing,
+        # so a false positive shows up here and not at deploy time.
+        run: node scripts/check-lockfile-sync.mjs
+
       - name: Install dependencies (no lifecycle scripts, lockfile must not change)
         id: install
         # --ignore-scripts skips install/postinstall of dependencies (esbuild,
