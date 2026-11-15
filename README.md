@@ -22,6 +22,7 @@ jpfigueredo.github.io/
 ├── apps/                   # Sub-applications showcase
 │   ├── goom64/            # GOOM64 (Go + WASM) game
 │   └── sw-timeline/       # Software Engineering Timeline
+├── archive/               # Apps taken offline (not workspaces, not built or deployed)
 ├── packages/              # Shared components & config
 │   ├── ui/               # Reusable UI components
 │   └── config/           # Shared configurations
