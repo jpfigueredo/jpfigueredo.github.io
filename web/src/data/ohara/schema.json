@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://jpfigueredo.github.io/ohara/schema.json",
   "title": "Ohara trail seed",
-  "description": "Formato de um seed de trilha do Ohara: metadados da trilha, nós (obras/fontes) e arestas (dependências do DAG). Validado no CI. Ownership NUNCA aparece aqui — é resolvido em runtime (só modo local).",
+  "description": "Formato de um seed de trilha do Ohara: metadados da trilha, nós (obras/fontes) e arestas (dependências do DAG). Validado pelos testes do app Ohara (apps/ohara/front/src/schema.test.ts). Ownership NUNCA aparece aqui — é resolvido em runtime (só modo local).",
   "type": "object",
   "required": ["trail", "nodes", "edges"],
   "additionalProperties": false,
