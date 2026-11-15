@@ -24,6 +24,12 @@
     "edges": { "type": "array", "items": { "$ref": "#/$defs/edge" } }
   },
   "$defs": {
+    "url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://[^/\\s]+",
+      "description": "Só https com host: a URL vira link clicável no app."
+    },
     "node": {
       "type": "object",
       "required": ["id", "type", "label", "year", "sources"],
@@ -31,7 +37,7 @@
       "properties": {
         "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
         "type": { "enum": ["paper", "book", "thesis", "standard", "article", "person"] },
-        "label": { "type": "string" },
+        "label": { "type": "string", "minLength": 1 },
         "author": { "type": "string" },
         "year": { "type": "integer", "minimum": 0, "maximum": 2100 },
         "tags": { "type": "array", "items": { "type": "string" } },
@@ -45,13 +51,13 @@
       "required": ["label", "kind", "sourceType"],
       "additionalProperties": false,
       "properties": {
-        "label": { "type": "string" },
+        "label": { "type": "string", "minLength": 1 },
         "author": { "type": "string" },
         "kind": { "enum": ["article", "video", "book", "course", "interactive"] },
         "sourceType": { "$ref": "#/$defs/source/properties/sourceType" },
         "provider": { "type": "string" },
-        "url": { "type": "string", "format": "uri" },
-        "query": { "type": "string" },
+        "url": { "$ref": "#/$defs/url" },
+        "query": { "type": "string", "minLength": 1 },
         "note": { "type": "string" }
       },
       "allOf": [
@@ -68,7 +74,7 @@
       "properties": {
         "sourceType": { "enum": ["free", "retail", "preview-embed"] },
         "provider": { "type": "string" },
-        "url": { "type": "string", "format": "uri" },
+        "url": { "$ref": "#/$defs/url" },
         "query": { "type": "string" },
         "note": { "type": "string" }
       },

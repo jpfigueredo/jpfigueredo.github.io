@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { describe, it, expect } from 'vitest';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
@@ -64,10 +65,6 @@ describe('schema do seed (ajv)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Casos adicionados pelo QA (issue jpfigueredo/ohara#3).
-// ---------------------------------------------------------------------------
-
 // Todo seed.*.json no disco, nas duas pastas onde o seed mora. Só os caminhos
 // (glob preguiçoso): serve para provar que nenhum seed fica de fora de SEEDS.
 const SEEDS_NO_DISCO = [
@@ -81,9 +78,10 @@ const SEEDS_NO_DISCO = [
 
 type Seed = { nodes: { explainers?: unknown[] }[] };
 
-// Garante que o seed foi rejeitado por causa do explicador, e não por outro motivo.
-const errosForaDoExplicador = () =>
-  (validate.errors ?? []).filter((e) => !e.instancePath.startsWith('/nodes/0/explainers'));
+// Garante que o seed foi rejeitado pelo campo sob teste, e não por outro motivo.
+const errosFora = (prefixo: string) =>
+  (validate.errors ?? []).filter((e) => !e.instancePath.startsWith(prefixo));
+const errosForaDoExplicador = () => errosFora('/nodes/0/explainers');
 
 describe('schema do seed (ajv): guardas contra teste que passa vazio', () => {
   it('SEEDS lista exatamente os seeds que existem no disco', () => {
@@ -93,8 +91,8 @@ describe('schema do seed (ajv): guardas contra teste que passa vazio', () => {
     expect(SEEDS.map(([path]) => path).sort()).toEqual([...SEEDS_NO_DISCO].sort());
   });
 
-  it.each(SEEDS)('%s não está truncado (≥ 26 nós, critério da issue #3)', (_path, seed) => {
-    // 26 é o tamanho da trilha no critério de aceite; se a trilha crescer, continua valendo.
+  it.each(SEEDS)('%s não está truncado (≥ 26 nós)', (_path, seed) => {
+    // 26 é o tamanho atual da trilha; se a trilha crescer, continua valendo.
     expect((seed as Seed).nodes.length).toBeGreaterThanOrEqual(26);
   });
 
@@ -174,19 +172,68 @@ describe('schema do seed (ajv): explicadores rejeitados', () => {
   });
 });
 
-// Achados do QA para o dev: o schema hoje ACEITA estes explicadores, mas o NodeModal
-// renderiza um cartão sem botão (sem url e sem query úteis) ou um link perigoso.
-// `it.fails` = passa enquanto o defeito existir; quando o schema for corrigido, o teste
-// passa a falhar e o `.fails` deve ser removido. Se a decisão for manter o comportamento,
-// apague o caso correspondente.
-describe('schema do seed (ajv): achados do QA (comportamento desejado, ainda não implementado)', () => {
-  it.fails.each([
-    ['retail sem url e sem query (cartão sem botão no modal)', { label: 'X', kind: 'book', sourceType: 'retail' }],
-    ['preview-embed sem url e sem query (cartão sem botão)', { label: 'X', kind: 'book', sourceType: 'preview-embed' }],
-    ['retail com query vazia e sem url (cartão sem botão)', { label: 'X', kind: 'book', sourceType: 'retail', query: '' }],
-    ['label vazio (cartão sem título)', { ...freeExplainer, label: '' }],
-    ['url com esquema javascript: (link executável no modal)', { ...freeExplainer, url: 'javascript:alert(1)' }],
-  ])('deveria rejeitar: %s', (_caso, explainer) => {
+// URLs viram href no NodeModal: só https com host. Outros esquemas (javascript:,
+// vbscript:, http:, ftp:) e formas sem autoridade ("https:host", "https://")
+// passariam pelo `format: uri` sozinho.
+const URLS_REJEITADAS: [string, string][] = [
+  ['javascript:', 'javascript:alert(1)'],
+  ['vbscript:', 'vbscript:msgbox(1)'],
+  ['http:', 'http://example.org/'],
+  ['https:// sem host', 'https://'],
+  ['https: sem //', 'https:evil.example'],
+  ['ftp:', 'ftp://example.org/arquivo'],
+];
+
+describe('schema do seed (ajv): url só https', () => {
+  it.each(URLS_REJEITADAS)('rejeita url de explicador: %s', (_caso, url) => {
+    expect(validate(withExplainer({ ...freeExplainer, url }))).toBe(false);
+    expect(errosForaDoExplicador()).toEqual([]);
+  });
+
+  it.each(URLS_REJEITADAS)('rejeita url de fonte: %s', (_caso, url) => {
+    const seed = validSeed() as { nodes: { sources: Record<string, unknown>[] }[] };
+    seed.nodes[0].sources = [{ sourceType: 'free', url }];
+    expect(validate(seed)).toBe(false);
+    expect(errosFora('/nodes/0/sources')).toEqual([]);
+  });
+
+  it('aceita url https de fonte', () => {
+    const seed = validSeed() as { nodes: { sources: Record<string, unknown>[] }[] };
+    seed.nodes[0].sources = [{ sourceType: 'free', url: 'https://example.org/paper.pdf' }];
+    const ok = validate(seed);
+    expect(validate.errors ?? []).toEqual([]);
+    expect(ok).toBe(true);
+  });
+});
+
+describe('schema do seed (ajv): textos vazios', () => {
+  // label vazio vira cartão sem título; query vazia vira busca vazia na loja.
+  it.each([
+    ['label vazio', { ...freeExplainer, label: '' }],
+    ['retail com query vazia e sem url', { label: 'X', kind: 'book', sourceType: 'retail', query: '' }],
+  ])('rejeita explicador: %s', (_caso, explainer) => {
     expect(validate(withExplainer(explainer))).toBe(false);
+    expect(errosForaDoExplicador()).toEqual([]);
+  });
+
+  it('rejeita nó com label vazio', () => {
+    const seed = validSeed();
+    seed.nodes[0].label = '';
+    expect(validate(seed)).toBe(false);
+    expect(validate.errors?.map((e) => e.instancePath)).toEqual(['/nodes/0/label']);
+  });
+});
+
+// Caracterização: o schema não exige url nem query em explicador retail/preview-embed,
+// e o NodeModal mostra esse cartão sem botão. Se a regra mudar, estes testes devem
+// ser trocados por casos de rejeição.
+describe('schema do seed (ajv): comportamento atual', () => {
+  it.each([
+    ['retail', { label: 'X', kind: 'book', sourceType: 'retail' }],
+    ['preview-embed', { label: 'X', kind: 'book', sourceType: 'preview-embed' }],
+  ])('HOJE aceita explicador %s sem url e sem query', (_caso, explainer) => {
+    const ok = validate(withExplainer(explainer));
+    expect(validate.errors ?? []).toEqual([]);
+    expect(ok).toBe(true);
   });
 });
