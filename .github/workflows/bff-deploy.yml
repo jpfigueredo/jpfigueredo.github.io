@@ -5,12 +5,23 @@ on:
     branches: [main]
     paths:
       - 'services/bff-api/**'
+      # The Render build installs from the root lockfile and checks it with
+      # this script; Node comes from .nvmrc.
+      - 'yarn.lock'
+      - 'package.json'
+      - '.nvmrc'
+      - 'scripts/check-lockfile-sync.mjs'
   workflow_dispatch: {}
+
+permissions: {}
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Render deploy
+        env:
+          RENDER_BFF_HOOK: ${{ secrets.RENDER_BFF_HOOK }}
         run: |
-          curl -f -X POST "${{ secrets.RENDER_BFF_HOOK }}"
+          test -n "$RENDER_BFF_HOOK" || { echo "::error::RENDER_BFF_HOOK is not set"; exit 1; }
+          curl --fail --silent --show-error -X POST "$RENDER_BFF_HOOK"
