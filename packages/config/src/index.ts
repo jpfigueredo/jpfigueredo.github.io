@@ -13,10 +13,6 @@ export const apps = {
     basePath: '/apps/kafka-viz/',
     iframeSrcProd: 'https://jpfigueredo.github.io/apps/kafka-viz/index.html',
   },
-  angularDemo: {
-    basePath: '/apps/angular-demo/',
-    iframeSrcProd: 'https://jpfigueredo.github.io/apps/angular-demo/browser/index.html',
-  },
 } as const;
 
 export const api = {
@@ -29,5 +25,4 @@ export const api = {
 export const features = {
   swTimelineAnalysis: true,
   kafkaViz: true,
-  angularDemo: true,
 } as const;

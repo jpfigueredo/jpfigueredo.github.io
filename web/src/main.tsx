@@ -76,7 +76,6 @@ const SidebarMenu: React.FC<{ isCollapsed: boolean; isMobileOpen: boolean; onTog
     { path: '/', label: t('nav.home'), icon: '🏠' },
     { path: '/projects/sw-timeline', label: t('nav.swTimeline'), icon: '🌳' },
     { path: '/projects/kafka-viz', label: t('nav.kafkaViz'), icon: '📡' },
-    { path: '/projects/angular-demo', label: t('nav.angularDemo'), icon: '🅰' },
   ];
 
   return (
@@ -269,7 +268,6 @@ const Footer: React.FC = () => {
 const PROJECTS = [
   { key: 'swTimeline', to: '/projects/sw-timeline', accent: '#2563EB', icon: '🌳', stack: ['React', 'TypeScript', 'DAG', 'Vitest'], src: configApps.ohara.iframeSrcProd },
   { key: 'kafkaViz', to: '/projects/kafka-viz', accent: '#F97316', icon: '📡', stack: ['React', 'TypeScript', 'Canvas'], src: configApps.kafkaViz.iframeSrcProd },
-  { key: 'angularDemo', to: '/projects/angular-demo', accent: '#94A388', icon: '🅰', stack: ['Angular 17', 'Signals', 'RxJS'], src: configApps.angularDemo.iframeSrcProd },
 ] as const;
 
 const STACK = ['Java', 'Kotlin', 'Spring', 'Kafka', 'Go', 'React', 'TypeScript', 'Kubernetes', 'AWS'];
@@ -593,23 +591,6 @@ const KafkaVizPage = () => {
   );
 };
 
-const AngularDemoPage = () => {
-  const { t } = useTranslation();
-  return (
-    <MainLayout>
-      <div className="p-4 sm:p-6">
-        <div className="mb-4 sm:mb-6">
-          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">
-            <span className="text-neon">{t('angularDemo.title')}</span>
-          </h1>
-          <p className="text-slate-400 text-sm sm:text-base">{t('angularDemo.description')}</p>
-        </div>
-        <IframeViewport src={configApps.angularDemo.iframeSrcProd} title="Angular Demo – Tech Stack Explorer" />
-      </div>
-    </MainLayout>
-  );
-};
-
 import IntroDoc from './docs/intro.mdx';
 const Docs = () => (
   <MainLayout>
@@ -625,7 +606,6 @@ const router = createBrowserRouter([
   { path: '/', element: <Home /> },
   { path: '/projects/sw-timeline', element: <SwTimeline /> },
   { path: '/projects/kafka-viz', element: <KafkaVizPage /> },
-  { path: '/projects/angular-demo', element: <AngularDemoPage /> },
   { path: '/docs', element: <Docs /> }
 ]);
 

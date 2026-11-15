@@ -9,8 +9,7 @@
     "home": "Início",
     "goom64": "GOOM64",
     "swTimeline": "Ohara",
-    "kafkaViz": "Kafka Viz",
-    "angularDemo": "Angular Demo"
+    "kafkaViz": "Kafka Viz"
   },
   "home": {
     "description": "Desenvolvedor apaixonado por tecnologia, especializado em criar soluções inovadoras que combinam performance, usabilidade e design moderno. Explorando as fronteiras entre desenvolvimento web, jogos e visualização de dados.",
@@ -57,17 +56,6 @@
         "Feito em React + TypeScript, sem backend"
       ]
     },
-    "angularDemo": {
-      "title": "Angular Demo",
-      "description": "Tech Stack Explorer em Angular 17+ com standalone components, Signals, Reactive Forms e HttpClient demonstrando padrões reais.",
-      "blurb": "Uma vitrine enxuta de para onde o Angular está indo. Construído em Angular 17+ com standalone components e o novo control flow, demonstra padrões modernos e testáveis de ponta a ponta — sem NgModules, sem boilerplate.",
-      "highlights": [
-        "Standalone components com o novo control flow @for / @if",
-        "Estado reativo com Signals — atualizações granulares e previsíveis",
-        "Reactive Forms tipados e HttpClient com estrutura de mundo real",
-        "Manutenível e testável: separação clara de responsabilidades"
-      ]
-    },
     "projectsTitle": "Projetos",
     "projectLabel": "Projeto",
     "viewLive": "Ver ao vivo",
@@ -96,10 +84,6 @@
   "kafkaViz": {
     "title": "Kafka Viz",
     "description": "Visualização interativa de um cluster Apache Kafka — topics, partitions, producers, consumers e consumer groups animados em tempo real."
-  },
-  "angularDemo": {
-    "title": "Angular Demo – Tech Stack Explorer",
-    "description": "Aplicação Angular 17+ com standalone components, Signals, Reactive Forms e controle de fluxo moderno (@for / @if)."
   },
   "footer": {
     "documentation": "Documentação",
