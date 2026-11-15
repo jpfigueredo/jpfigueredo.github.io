@@ -126,17 +126,76 @@ async fn health_check() -> Json<HealthResponse> {
 )]
 async fn get_timeline() -> Json<TimelineResponse> {
     let events = vec![
-        TimelineEvent { id: "turing-1936".into(), year: 1936, title: "Máquina de Turing".into(), short_description: "Alan Turing define formalmente o conceito de computação algorítmica.".into(), theory_tags: vec!["theory".into(), "labor".into()] },
-        TimelineEvent { id: "eniac-1945".into(), year: 1945, title: "ENIAC".into(), short_description: "Primeiro computador eletrônico de propósito geral entra em operação.".into(), theory_tags: vec!["industry".into(), "labor".into()] },
-        TimelineEvent { id: "unix-1969".into(), year: 1969, title: "Unix".into(), short_description: "Ken Thompson e Dennis Ritchie criam o Unix nos Bell Labs.".into(), theory_tags: vec!["industry".into(), "oss".into()] },
-        TimelineEvent { id: "gnu-1983".into(), year: 1983, title: "GNU Project".into(), short_description: "Richard Stallman lança o GNU Project e a Free Software Foundation.".into(), theory_tags: vec!["oss".into(), "theory".into()] },
-        TimelineEvent { id: "linux-1991".into(), year: 1991, title: "Linux".into(), short_description: "Linus Torvalds inicia o kernel Linux como projeto pessoal.".into(), theory_tags: vec!["oss".into(), "industry".into()] },
-        TimelineEvent { id: "agile-2001".into(), year: 2001, title: "Manifesto Ágil".into(), short_description: "Dezessete desenvolvedores publicam o Manifesto para Desenvolvimento Ágil.".into(), theory_tags: vec!["theory".into(), "labor".into()] },
-        TimelineEvent { id: "kubernetes-2014".into(), year: 2014, title: "Kubernetes".into(), short_description: "Google open-sourcea o Kubernetes, transformando infraestrutura de software.".into(), theory_tags: vec!["industry".into(), "oss".into()] },
-        TimelineEvent { id: "chatgpt-2022".into(), year: 2022, title: "ChatGPT".into(), short_description: "OpenAI lança o ChatGPT, popularizando os Large Language Models.".into(), theory_tags: vec!["theory".into(), "labor".into()] },
+        TimelineEvent {
+            id: "turing-1936".into(),
+            year: 1936,
+            title: "Máquina de Turing".into(),
+            short_description:
+                "Alan Turing define formalmente o conceito de computação algorítmica.".into(),
+            theory_tags: vec!["theory".into(), "labor".into()],
+        },
+        TimelineEvent {
+            id: "eniac-1945".into(),
+            year: 1945,
+            title: "ENIAC".into(),
+            short_description:
+                "Primeiro computador eletrônico de propósito geral entra em operação.".into(),
+            theory_tags: vec!["industry".into(), "labor".into()],
+        },
+        TimelineEvent {
+            id: "unix-1969".into(),
+            year: 1969,
+            title: "Unix".into(),
+            short_description: "Ken Thompson e Dennis Ritchie criam o Unix nos Bell Labs.".into(),
+            theory_tags: vec!["industry".into(), "oss".into()],
+        },
+        TimelineEvent {
+            id: "gnu-1983".into(),
+            year: 1983,
+            title: "GNU Project".into(),
+            short_description: "Richard Stallman lança o GNU Project e a Free Software Foundation."
+                .into(),
+            theory_tags: vec!["oss".into(), "theory".into()],
+        },
+        TimelineEvent {
+            id: "linux-1991".into(),
+            year: 1991,
+            title: "Linux".into(),
+            short_description: "Linus Torvalds inicia o kernel Linux como projeto pessoal.".into(),
+            theory_tags: vec!["oss".into(), "industry".into()],
+        },
+        TimelineEvent {
+            id: "agile-2001".into(),
+            year: 2001,
+            title: "Manifesto Ágil".into(),
+            short_description:
+                "Dezessete desenvolvedores publicam o Manifesto para Desenvolvimento Ágil.".into(),
+            theory_tags: vec!["theory".into(), "labor".into()],
+        },
+        TimelineEvent {
+            id: "kubernetes-2014".into(),
+            year: 2014,
+            title: "Kubernetes".into(),
+            short_description:
+                "Google open-sourcea o Kubernetes, transformando infraestrutura de software.".into(),
+            theory_tags: vec!["industry".into(), "oss".into()],
+        },
+        TimelineEvent {
+            id: "chatgpt-2022".into(),
+            year: 2022,
+            title: "ChatGPT".into(),
+            short_description: "OpenAI lança o ChatGPT, popularizando os Large Language Models."
+                .into(),
+            theory_tags: vec!["theory".into(), "labor".into()],
+        },
     ];
     let total = events.len();
-    Json(TimelineResponse { events, total, page: 1, per_page: 10 })
+    Json(TimelineResponse {
+        events,
+        total,
+        page: 1,
+        per_page: 10,
+    })
 }
 
 /// Get item by ID
@@ -178,7 +237,9 @@ async fn get_item(Path(id): Path<String>) -> Result<Json<ItemResponse>, StatusCo
         (status = 400, description = "Invalid request", body = ErrorResponse)
     )
 )]
-async fn create_item(Json(payload): Json<CreateItemRequest>) -> Result<Json<ItemResponse>, StatusCode> {
+async fn create_item(
+    Json(payload): Json<CreateItemRequest>,
+) -> Result<Json<ItemResponse>, StatusCode> {
     // Example: create item
     // In a real app, you'd save to a database here
     let item = ItemResponse {
@@ -187,7 +248,7 @@ async fn create_item(Json(payload): Json<CreateItemRequest>) -> Result<Json<Item
         description: payload.description,
         created_at: chrono::Utc::now().to_rfc3339(),
     };
-    
+
     Ok(Json(item))
 }
 
@@ -212,9 +273,11 @@ async fn main() {
     let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
     info!("🚀 Server starting on http://{}", addr);
     info!("📚 Swagger UI available at http://{}/swagger-ui", addr);
-    info!("📖 OpenAPI spec available at http://{}/api-docs/openapi.json", addr);
+    info!(
+        "📖 OpenAPI spec available at http://{}/api-docs/openapi.json",
+        addr
+    );
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
-

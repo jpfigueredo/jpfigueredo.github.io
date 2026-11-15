@@ -1,11 +1,18 @@
-# Pull request checks: typecheck, tests (incl. seed-vs-schema validation), lint
-# and a non-blocking dependency audit.
+# Pull request checks.
+#   node-checks: typecheck, tests (incl. seed-vs-schema validation), a guard
+#                against an empty or skipped test suite, lint, build, and a
+#                non-blocking dependency audit.
+#   rust-checks: cargo fmt, clippy and tests for services/rust-api. It always
+#                reports a result (so it can be a required check), but only
+#                compiles when the PR touches Rust; otherwise it passes in
+#                seconds.
 #
 # Security model: a PR (including one from a fork) runs untrusted code here
 # (install, lint, tests). So this workflow:
 #   - triggers only on `pull_request` (never `pull_request_target`/`workflow_run`);
 #   - gets a read-only GITHUB_TOKEN, uses no secrets and no OIDC token;
 #   - does not persist git credentials after checkout;
+#   - restores and saves no cache (nothing a PR writes can reach another run);
 #   - installs with `--ignore-scripts` (no lifecycle scripts) and fails if
 #     the install would change yarn.lock;
 #   - pins every action to a full commit SHA;
@@ -94,8 +101,7 @@ jobs:
           fi
 
       # rust-api is excluded from every turbo run below: its tasks are cargo
-      # commands. Note: rust-api.yml currently runs only on PRs to main, so
-      # Rust is not checked on PRs to develop/release yet (tracked separately).
+      # commands, checked by the rust-checks job.
       #
       # The checks below run even if an earlier one failed, so a single run
       # shows every failure. They are skipped only if install failed.
@@ -114,6 +120,20 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: yarn turbo run test --filter='!rust-api'
 
+      - name: Guard against an empty or skipped test suite
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        # `turbo run test` exits 0 when no package has a test script, and
+        # vitest exits 0 when tests are skipped. This fails if an expected test
+        # task disappears, or if the ohara-front suite drops below its minimum
+        # test count or has skipped/todo tests. Expected numbers and how to
+        # update them: scripts/check-test-suite.mjs.
+        # Keep the --filter equal to the Test step's.
+        run: |
+          yarn -s turbo run test --filter='!rust-api' --dry=json > "$RUNNER_TEMP/turbo-test-dry.json"
+          yarn -s workspace @jpfig/ohara-front vitest run \
+            --reporter=json --outputFile="$RUNNER_TEMP/ohara-front-vitest.json" > /dev/null
+          node scripts/check-test-suite.mjs "$RUNNER_TEMP/turbo-test-dry.json" "$RUNNER_TEMP/ohara-front-vitest.json"
+
       - name: Lint
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         # Excluded until their lint setup is fixed (known, tracked separately):
@@ -125,3 +145,95 @@ jobs:
           --filter='!rust-api'
           --filter='!@jpfig/kafka-viz'
           --filter='!@jpfig/angular-demo'
+
+      - name: Build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        # The same `turbo run build` the Pages deploy runs, minus rust-api
+        # (rust-checks compiles it). Catches what only the bundler sees, e.g. an
+        # import of a file that does not exist. Output stays on the runner: no
+        # artifact upload, no deploy.
+        run: yarn turbo run build --filter='!rust-api'
+
+  rust-checks:
+    name: rust-checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      # Pinned toolchain, so a new stable release (new clippy lints, new
+      # rustfmt rules) cannot turn PRs red on its own. To upgrade, change this
+      # value in a PR. Installed with the runner's preinstalled rustup, from
+      # static.rust-lang.org; no third-party action.
+      RUSTUP_TOOLCHAIN: "1.99.0"
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The PR merge commit and its parents: HEAD^1 is the base branch tip,
+          # so `git diff HEAD^1 HEAD` is exactly what this PR changes.
+          fetch-depth: 2
+
+      - name: Detect Rust changes
+        id: changes
+        # Plain git, no path-filter action. Fails closed: if HEAD is not a
+        # two-parent merge commit, the Rust checks run anyway; if git diff
+        # errors, the job fails.
+        run: |
+          if [ "$(git rev-list --parents -n 1 HEAD | wc -w)" -ne 3 ]; then
+            echo "::notice title=rust-checks::HEAD is not a PR merge commit, running the Rust checks."
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Root-level cargo/rustfmt/clippy config also changes what cargo
+          # does in services/rust-api, so it triggers the checks too.
+          changed="$(git diff --name-only HEAD^1 HEAD -- \
+            services/rust-api .github/workflows/ci.yml \
+            Cargo.toml Cargo.lock rustfmt.toml .rustfmt.toml \
+            clippy.toml .clippy.toml .cargo)"
+          if [ -n "$changed" ]; then
+            echo "Files that trigger the Rust checks:"
+            echo "$changed"
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No change under services/rust-api, root cargo config or this workflow: skipping the Rust checks."
+            echo "rust=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Rust toolchain
+        id: toolchain
+        if: ${{ steps.changes.outputs.rust == 'true' }}
+        run: |
+          rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal \
+            --component clippy --component rustfmt --no-self-update
+          rustc --version
+          cargo --version
+          rustc --version | grep -q "^rustc $RUSTUP_TOOLCHAIN "
+
+      # No cargo cache on purpose (same reason as node-checks; a cache of
+      # target/ or ~/.cargo written by PR code is a poisoning vector), so each
+      # run compiles from scratch.
+      #
+      # No --locked: services/rust-api has no committed Cargo.lock (it is in
+      # its .gitignore), so dependencies are resolved on every run. Add
+      # --locked to the cargo commands below once Cargo.lock is committed.
+      #
+      # fmt, clippy and test run even if an earlier one failed.
+
+      - name: cargo fmt --check
+        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+        working-directory: services/rust-api
+        run: cargo fmt --check
+
+      - name: cargo clippy
+        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+        working-directory: services/rust-api
+        run: cargo clippy -- -D warnings
+
+      - name: cargo test
+        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+        working-directory: services/rust-api
+        run: cargo test
