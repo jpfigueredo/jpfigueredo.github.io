@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://jpfigueredo.github.io/ohara/schema.json",
   "title": "Ohara trail seed",
-  "description": "Formato de um seed de trilha do Ohara: metadados da trilha, nós (obras/fontes) e arestas (dependências do DAG). Validado no CI. Ownership NUNCA aparece aqui — é resolvido em runtime (só modo local).",
+  "description": "Formato de um seed de trilha do Ohara: metadados da trilha, nós (obras/fontes) e arestas (dependências do DAG). Validado pelos testes do app Ohara (apps/ohara/front/src/schema.test.ts). Ownership NUNCA aparece aqui — é resolvido em runtime (só modo local).",
   "type": "object",
   "required": ["trail", "nodes", "edges"],
   "additionalProperties": false,
@@ -24,6 +24,12 @@
     "edges": { "type": "array", "items": { "$ref": "#/$defs/edge" } }
   },
   "$defs": {
+    "url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://[^/\\s]+",
+      "description": "Só https com host: a URL vira link clicável no app."
+    },
     "node": {
       "type": "object",
       "required": ["id", "type", "label", "year", "sources"],
@@ -31,12 +37,35 @@
       "properties": {
         "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
         "type": { "enum": ["paper", "book", "thesis", "standard", "article", "person"] },
-        "label": { "type": "string" },
+        "label": { "type": "string", "minLength": 1 },
         "author": { "type": "string" },
         "year": { "type": "integer", "minimum": 0, "maximum": 2100 },
         "tags": { "type": "array", "items": { "type": "string" } },
-        "sources": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/source" } }
+        "sources": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/source" } },
+        "explainers": { "type": "array", "items": { "$ref": "#/$defs/explainer" } }
       }
+    },
+    "explainer": {
+      "type": "object",
+      "description": "Rampa de acesso p/ iniciantes (material secundário). NÃO é fonte primária nem nó do DAG.",
+      "required": ["label", "kind", "sourceType"],
+      "additionalProperties": false,
+      "properties": {
+        "label": { "type": "string", "minLength": 1 },
+        "author": { "type": "string" },
+        "kind": { "enum": ["article", "video", "book", "course", "interactive"] },
+        "sourceType": { "$ref": "#/$defs/source/properties/sourceType" },
+        "provider": { "type": "string" },
+        "url": { "$ref": "#/$defs/url" },
+        "query": { "type": "string", "minLength": 1 },
+        "note": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "sourceType": { "const": "free" } } },
+          "then": { "required": ["url"], "description": "explicador livre PRECISA de URL verificável" }
+        }
+      ]
     },
     "source": {
       "type": "object",
@@ -45,7 +74,7 @@
       "properties": {
         "sourceType": { "enum": ["free", "retail", "preview-embed"] },
         "provider": { "type": "string" },
-        "url": { "type": "string", "format": "uri" },
+        "url": { "$ref": "#/$defs/url" },
         "query": { "type": "string" },
         "note": { "type": "string" }
       },
