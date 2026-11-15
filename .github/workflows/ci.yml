@@ -1,0 +1,105 @@
+# Pull request checks: typecheck, tests (incl. seed-vs-schema validation), lint
+# and a non-blocking dependency audit.
+#
+# Security model: a PR (including one from a fork) runs untrusted code here
+# (install, lint, tests). So this workflow:
+#   - triggers only on `pull_request` (never `pull_request_target`/`workflow_run`);
+#   - gets a read-only GITHUB_TOKEN, uses no secrets and no OIDC token;
+#   - does not persist git credentials after checkout;
+#   - installs with `--ignore-scripts` (no dependency lifecycle scripts);
+#   - pins every action to a full commit SHA;
+#   - is independent from every deploy workflow.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, release, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+  # Turbo task cache: local only, remote explicitly off. The local `.turbo`
+  # cache is never saved or restored between runs, so every run starts cold
+  # and a stale cache entry cannot produce a false green.
+  TURBO_CACHE: "local:rw"
+
+jobs:
+  node-checks:
+    name: node-checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node (version from .nvmrc)
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          # Caches only the yarn download cache, keyed on yarn.lock.
+          cache: yarn
+
+      - name: Toolchain versions
+        run: |
+          node --version
+          yarn --version
+          # The repo is yarn 1 only (packageManager: yarn@1.22.22).
+          yarn --version | grep -q '^1\.'
+
+      - name: Install dependencies (lockfile only, no lifecycle scripts)
+        # --ignore-scripts skips install/postinstall of dependencies (esbuild,
+        # sharp, workerd, @parcel/watcher, nice-napi). Typecheck, tests, lint
+        # and the vite build were verified to work without them: esbuild and
+        # friends ship their native binaries as optional dependencies.
+        run: yarn install --frozen-lockfile --ignore-scripts --non-interactive
+
+      - name: Dependency audit (advisory, non-blocking)
+        # Reports advisories as a warning annotation but never fails the job:
+        # there are pre-existing advisories that are being handled separately.
+        # Make this blocking once the baseline is clean.
+        run: |
+          code=0
+          yarn audit || code=$?
+          if [ "$code" -ne 0 ]; then
+            echo "::warning title=yarn audit::yarn audit reported advisories (exit code $code). See this step's log."
+          fi
+
+      # rust-api is excluded from every turbo run below: its tasks are cargo
+      # commands and it has its own workflow (rust-api.yml).
+
+      - name: Typecheck
+        run: yarn turbo run typecheck --filter='!rust-api'
+
+      - name: Validate Ohara seeds against schema
+        # Runs the ajv schema test on its own so a seed/schema mismatch shows
+        # up as a named step. It is also part of the full test run below.
+        run: yarn workspace @jpfig/ohara-front vitest run src/schema.test.ts
+
+      - name: Test
+        run: yarn turbo run test --filter='!rust-api'
+
+      - name: Lint
+        # Excluded until their lint setup is fixed (known, tracked separately):
+        #   @jpfig/kafka-viz    - no eslint.config.* for ESLint 10
+        #   @jpfig/angular-demo - no `lint` target configured for `ng lint`
+        # To widen coverage, delete the matching --filter line.
+        run: >-
+          yarn turbo run lint
+          --filter='!rust-api'
+          --filter='!@jpfig/kafka-viz'
+          --filter='!@jpfig/angular-demo'
