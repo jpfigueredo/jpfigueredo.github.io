@@ -1,7 +1,7 @@
 # Pull request checks.
 #   node-checks: typecheck, tests (incl. seed-vs-schema validation), a guard
 #                against an empty or skipped test suite, lint, build, and a
-#                non-blocking dependency audit.
+#                dependency audit that fails on high or critical advisories.
 #   rust-checks: cargo fmt, clippy and tests for services/rust-api. It always
 #                reports a result (so it can be a required check), but only
 #                compiles when the PR touches Rust; otherwise it passes in
@@ -89,15 +89,43 @@ jobs:
           yarn install --ignore-scripts --non-interactive
           git diff --exit-code -- yarn.lock
 
-      - name: Dependency audit (advisory, non-blocking)
-        # Reports advisories as a warning annotation but never fails the job:
-        # there are pre-existing advisories that are being handled separately.
-        # Make this blocking once the baseline is clean.
+      - name: Dependency audit (fails on high or critical)
+        # Audits every package in yarn.lock, dependencies and devDependencies
+        # alike (dev tooling runs here and in the Pages build). Prints the full
+        # report, then:
+        #   - high or critical advisory   -> the job fails;
+        #   - moderate, low or info only  -> warning annotation, job passes;
+        #   - audit did not complete      -> the job fails (fail closed).
+        #
+        # Why the bar is high and not moderate: high and critical are fixed
+        # before merging. Moderate ones are triaged case by case, because some
+        # have no fix in the major version in use; blocking on them would
+        # force a major upgrade to unblock unrelated PRs. When this gate was
+        # added, the only advisories left were two moderate ones in
+        # react-router 6 with no 6.x fix (GHSA-wrjc-x8rr-h8h6,
+        # GHSA-337j-9hxr-rhxg), not reachable from web: it has no SSR
+        # hydration and passes only constant paths to <Link>.
+        #
+        # yarn 1 exit code: a bitmask of the severities found (1 info, 2 low,
+        # 4 moderate, 8 high, 16 critical). `--level` only filters what is
+        # printed, not the exit code, so the step decodes the bitmask itself.
+        # A failed audit (e.g. registry unreachable) exits non-zero without
+        # printing the "Packages audited:" summary line; that is treated as a
+        # failure, not as a clean result.
         run: |
           code=0
-          yarn audit || code=$?
+          yarn audit > "$RUNNER_TEMP/yarn-audit.txt" 2>&1 || code=$?
+          cat "$RUNNER_TEMP/yarn-audit.txt"
+          if ! grep -qF 'Packages audited:' "$RUNNER_TEMP/yarn-audit.txt"; then
+            echo "::error title=yarn audit::yarn audit did not complete (exit code $code), so dependencies were not checked. Re-run the job; if it keeps failing, check registry access."
+            exit 1
+          fi
+          if (( code & (8 | 16) )); then
+            echo "::error title=yarn audit::High or critical advisories in yarn.lock (exit code $code). Upgrade the affected packages before merging; the advisory table is in this step's log."
+            exit 1
+          fi
           if [ "$code" -ne 0 ]; then
-            echo "::warning title=yarn audit::yarn audit reported advisories (exit code $code). See this step's log."
+            echo "::warning title=yarn audit::Moderate, low or info advisories in yarn.lock (exit code $code). They do not fail CI, but new ones need triage; see this step's log."
           fi
 
       # rust-api is excluded from every turbo run below: its tasks are cargo
