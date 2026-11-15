@@ -24,8 +24,6 @@ jobs:
           cache: 'yarn'
       - name: Install deps
         run: yarn install --frozen-lockfile
-      - name: Install Angular deps
-        run: cd apps/angular-demo && npm install
       - name: Build
         run: yarn build
       - name: Compose Pages artifact
