@@ -110,14 +110,18 @@ jobs:
         # 4 moderate, 8 high, 16 critical). `--level` only filters what is
         # printed, not the exit code, so the step decodes the bitmask itself.
         # A failed audit (e.g. registry unreachable) exits non-zero without
-        # printing the "Packages audited:" summary line; that is treated as a
-        # failure, not as a clean result.
+        # printing the "Packages audited: N" summary line; that, or N = 0 (an
+        # empty answer from the registry), is treated as a failure, not as a
+        # clean result. N is the registry's dependency count for the tree,
+        # not the number of yarn.lock entries, so it is lower than that.
         run: |
           code=0
           yarn audit > "$RUNNER_TEMP/yarn-audit.txt" 2>&1 || code=$?
           cat "$RUNNER_TEMP/yarn-audit.txt"
-          if ! grep -qF 'Packages audited:' "$RUNNER_TEMP/yarn-audit.txt"; then
-            echo "::error title=yarn audit::yarn audit did not complete (exit code $code), so dependencies were not checked. Re-run the job; if it keeps failing, check registry access."
+          # Strip ANSI colors before parsing (yarn colors the number on a TTY).
+          audited="$(sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/yarn-audit.txt" | grep -oE 'Packages audited: [0-9]+' | grep -oE '[0-9]+$' || true)"
+          if [ -z "$audited" ] || [ "$audited" -eq 0 ]; then
+            echo "::error title=yarn audit::yarn audit did not complete or audited nothing (exit code $code, packages audited: ${audited:-none}), so dependencies were not checked. Re-run the job; if it keeps failing, check registry access."
             exit 1
           fi
           if (( code & (8 | 16) )); then
