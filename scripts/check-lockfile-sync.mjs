@@ -87,8 +87,10 @@ function yarnWorkspaces() {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
   } catch (error) {
-    const detail = (error.stderr || error.message || '').toString().trim().split('\n').pop();
-    return fail(`\`yarn workspaces info\` failed: ${detail}`);
+    // yarn prints `error <message>` followed by a stack; keep the message only.
+    const lines = (error.stderr || error.message || '').toString().trim().split('\n');
+    const detail = (lines.find((line) => line.startsWith('error ')) ?? lines[0] ?? '').replace(/^error /, '');
+    return fail(`\`yarn workspaces info\` failed: ${detail.replace(`${repoRoot}${path.sep}`, '')}`);
   }
   try {
     return JSON.parse(out);
