@@ -37,7 +37,7 @@ Scopes map to packages/apps in the monorepo:
 | `web` | `web/` |
 | `sw-timeline` | `apps/sw-timeline/` |
 | `kafka-viz` | `apps/kafka-viz/` |
-| `angular-demo` | `apps/angular-demo/` |
+| `angular-demo` | `archive/angular-demo/` (offline, not a workspace) |
 | `doom64` | `apps/doom64-wasm/` |
 | `ui` | `packages/ui/` |
 | `config` | `packages/config/` |
