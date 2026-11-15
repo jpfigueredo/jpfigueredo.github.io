@@ -35,8 +35,31 @@
         "author": { "type": "string" },
         "year": { "type": "integer", "minimum": 0, "maximum": 2100 },
         "tags": { "type": "array", "items": { "type": "string" } },
-        "sources": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/source" } }
+        "sources": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/source" } },
+        "explainers": { "type": "array", "items": { "$ref": "#/$defs/explainer" } }
       }
+    },
+    "explainer": {
+      "type": "object",
+      "description": "Rampa de acesso p/ iniciantes (material secundário). NÃO é fonte primária nem nó do DAG.",
+      "required": ["label", "kind", "sourceType"],
+      "additionalProperties": false,
+      "properties": {
+        "label": { "type": "string" },
+        "author": { "type": "string" },
+        "kind": { "enum": ["article", "video", "book", "course", "interactive"] },
+        "sourceType": { "$ref": "#/$defs/source/properties/sourceType" },
+        "provider": { "type": "string" },
+        "url": { "type": "string", "format": "uri" },
+        "query": { "type": "string" },
+        "note": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "sourceType": { "const": "free" } } },
+          "then": { "required": ["url"], "description": "explicador livre PRECISA de URL verificável" }
+        }
+      ]
     },
     "source": {
       "type": "object",
