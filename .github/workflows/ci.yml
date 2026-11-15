@@ -188,13 +188,18 @@ jobs:
             echo "rust=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          changed="$(git diff --name-only HEAD^1 HEAD -- services/rust-api .github/workflows/ci.yml)"
+          # Root-level cargo/rustfmt/clippy config also changes what cargo
+          # does in services/rust-api, so it triggers the checks too.
+          changed="$(git diff --name-only HEAD^1 HEAD -- \
+            services/rust-api .github/workflows/ci.yml \
+            Cargo.toml Cargo.lock rustfmt.toml .rustfmt.toml \
+            clippy.toml .clippy.toml .cargo)"
           if [ -n "$changed" ]; then
             echo "Files that trigger the Rust checks:"
             echo "$changed"
             echo "rust=true" >> "$GITHUB_OUTPUT"
           else
-            echo "No change under services/rust-api or in this workflow: skipping the Rust checks."
+            echo "No change under services/rust-api, root cargo config or this workflow: skipping the Rust checks."
             echo "rust=false" >> "$GITHUB_OUTPUT"
           fi
 
