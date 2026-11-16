@@ -316,7 +316,8 @@ jobs:
         run: |
           docker run --detach --name rust-api-ci --publish 127.0.0.1:8080:8080 rust-api:ci
           health=starting
-          # The first HEALTHCHECK probe runs one interval (30s) after start.
+          # Waits up to 90s for the first HEALTHCHECK result (the interval is
+          # 30s; recent engines also probe during the 10s start period).
           for _ in $(seq 1 45); do
             health="$(docker inspect --format '{{.State.Health.Status}}' rust-api-ci)"
             [ "$health" = starting ] || break
