@@ -89,7 +89,7 @@ struct TimelineResponse {
         version = "0.1.0",
         contact(
             name = "João Figueredo",
-            email = "jp.figueredo8@gmail.com"
+            email = "63759223+jpfigueredo@users.noreply.github.com"
         )
     )
 )]

@@ -62,7 +62,10 @@ FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f0
 
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
-RUN useradd --system --uid 10001 --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin rust-api
+# Service user and group with fixed ids, matching USER below.
+RUN groupadd --system --gid 10001 rust-api
+
+RUN useradd --system --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin rust-api
 
 WORKDIR /app
 
