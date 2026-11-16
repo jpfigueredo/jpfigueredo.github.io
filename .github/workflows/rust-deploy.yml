@@ -7,10 +7,30 @@ on:
       - 'services/rust-api/**'
   workflow_dispatch: {}
 
+# The job only calls the Render deploy hook: no checkout, no token scopes.
+permissions: {}
+
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    # The hook URL is a secret of this environment (its deployment policy
+    # must allow the main branch only).
+    environment: render
     steps:
-      - name: Trigger Render deploy
+      - name: Only deploy from main
+        # Backs up the environment policy, and stops a
+        # manual run on another branch before any secret is read.
         run: |
-          curl -f -X POST "${{ secrets.RENDER_RUST_HOOK }}"
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Deploys run only from refs/heads/main, this run is on $GITHUB_REF."
+            exit 1
+          fi
+
+      - name: Trigger Render deploy
+        env:
+          RENDER_RUST_HOOK: ${{ secrets.RENDER_RUST_HOOK }}
+        run: |
+          test -n "$RENDER_RUST_HOOK" || { echo "::error::RENDER_RUST_HOOK is not set"; exit 1; }
+          curl --fail --silent --show-error --max-time 30 -X POST "$RENDER_RUST_HOOK"

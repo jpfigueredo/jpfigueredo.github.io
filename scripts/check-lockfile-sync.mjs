@@ -19,12 +19,17 @@
 // Usage (from anywhere):
 //   node scripts/check-lockfile-sync.mjs
 //   node scripts/check-lockfile-sync.mjs --installed services/bff-api
+//   node scripts/check-lockfile-sync.mjs --installed services/edge-proxy --include-dev
 //
 // With --installed <dir>, after an install it also reads, for each dependency
 // of <dir>/package.json, the package.json that Node resolves from <dir>
 // (nearest node_modules walking up) and fails if its version differs from the
 // version yarn.lock pins for that range. This catches a stale node_modules
 // (e.g. restored from a build cache) shadowing the locked version.
+// By default it checks `dependencies` and `optionalDependencies` only, which is
+// what a `--production` install has. Add --include-dev to also check
+// `devDependencies` (e.g. a deploy tool such as wrangler); a missing
+// devDependency then fails too.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -149,8 +154,10 @@ if (flag !== -1) {
   if (!relDir) fail('--installed needs a workspace directory, e.g. services/bff-api');
   const startDir = path.resolve(repoRoot, relDir);
   const pkg = readJson(path.join(startDir, 'package.json'));
+  const includeDev = process.argv.includes('--include-dev');
+  const required = includeDev ? ['dependencies', 'devDependencies'] : ['dependencies'];
   const mismatches = [];
-  for (const field of ['dependencies', 'optionalDependencies']) {
+  for (const field of [...required, 'optionalDependencies']) {
     for (const [name, range] of Object.entries(pkg[field] ?? {})) {
       if (workspaceNames.has(name)) continue;
       const locked = lock.get(`${name}@${range}`);
@@ -164,7 +171,7 @@ if (flag !== -1) {
         if (path.dirname(dir) === dir) break;
       }
       if (!found) {
-        if (field === 'dependencies') mismatches.push(`${name}@${range}: not installed (locked ${locked})`);
+        if (required.includes(field)) mismatches.push(`${name}@${range}: not installed (locked ${locked})`);
         continue;
       }
       const installed = readJson(found).version;

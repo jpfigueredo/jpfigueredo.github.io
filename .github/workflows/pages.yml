@@ -1,44 +1,160 @@
+# Production deploy of the static site to GitHub Pages.
+#
+#   build:  installs from yarn.lock, builds every package except rust-api,
+#           composes .pages/ and uploads it as the Pages artifact.
+#   deploy: publishes that artifact to the github-pages environment.
+#
+# Security model:
+#   - read-only GITHUB_TOKEN by default; only the deploy job gets
+#     `pages: write` and `id-token: write`, and it runs no repository code;
+#   - git credentials are not persisted after checkout;
+#   - no dependency cache is restored or saved: the job that builds the
+#     production artifact starts from yarn.lock and the registry only;
+#   - dependencies are installed from yarn.lock with lifecycle scripts off
+#     (the same flags as PR CI, where the same build is verified);
+#   - every action is pinned to a full commit SHA.
+#
+# Trigger: pushes to main only. The github-pages environment accepts
+# deployments from the main branch only, so a run started by a tag would be
+# rejected at the deploy job. Release tags are cut on main after the push
+# that already deployed that commit.
+
 name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main, master]
-    tags: ['v*']
+    branches: [main]
   workflow_dispatch: {}
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
+
+# One run per ref at a time; a newer push waits instead of cancelling a
+# deployment that is already in progress. Grouped by ref so a manual run on
+# another branch (rejected at deploy anyway) never queues behind or ahead of
+# a main deployment.
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+  # Turbo task cache: local only, remote explicitly off. The local `.turbo`
+  # cache is never saved or restored between runs.
+  TURBO_CACHE: "local:rw"
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node (version from .nvmrc)
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-          cache: 'yarn'
-      - name: Install deps
-        run: yarn install --frozen-lockfile
-      - name: Build
-        run: yarn build
+          # No dependency cache on purpose: a restored cache entry is not
+          # checked against yarn.lock, so a poisoned entry would end up in
+          # the production artifact.
+
+      - name: Toolchain versions
+        run: |
+          node --version
+          yarn --version
+          # The repo is yarn 1 only (packageManager: yarn@1.22.22).
+          case "$(yarn --version)" in
+            1.*) ;;
+            *) echo "::error::yarn 1.x required (packageManager: yarn@1.22.22), got $(yarn --version)"; exit 1 ;;
+          esac
+
+      - name: Check package.json files against yarn.lock
+        # yarn 1 --frozen-lockfile does not catch a workspace package.json
+        # that drifted from yarn.lock; this check does, with no network.
+        run: node scripts/check-lockfile-sync.mjs
+
+      - name: Install dependencies (from yarn.lock, no lifecycle scripts)
+        run: yarn install --frozen-lockfile --ignore-scripts --non-interactive
+
+      - name: Build (all packages except rust-api)
+        # rust-api is a Render service, not part of the site: its build is
+        # `cargo build --release` and compose-pages.sh never reads its output.
+        # PR CI compiles and tests it (rust-checks job).
+        run: yarn turbo run build --filter='!rust-api'
+
       - name: Compose Pages artifact
         run: bash scripts/compose-pages.sh
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+
+      - name: Verify Pages artifact
+        # Fails if the site entry pages or any app that must go live is
+        # missing from .pages, then prints what will be published.
+        #
+        # PAGES_APPS is the reviewed list of apps published under /apps/
+        # (paths relative to apps/). The step also fails if the list differs
+        # from the yarn workspaces under apps/ that have a `build` script, so
+        # an app added, removed or left without a build is caught here. To
+        # add or remove an app, change its workspace and this list together.
+        env:
+          PAGES_APPS: kafka-viz ohara/front sw-timeline
+        run: |
+          fail=0
+          for page in index.html 404.html; do
+            test -s ".pages/$page" || { echo "::error::.pages/$page is missing or empty"; fail=1; }
+          done
+          expected="$(printf '%s\n' $PAGES_APPS | LC_ALL=C sort)"
+          with_build="$(yarn -s workspaces info | node -e '
+            const fs = require("fs");
+            const workspaces = JSON.parse(fs.readFileSync(0, "utf8"));
+            for (const { location } of Object.values(workspaces)) {
+              if (!location.startsWith("apps/")) continue;
+              const pkg = JSON.parse(fs.readFileSync(`${location}/package.json`, "utf8"));
+              if (pkg.scripts && pkg.scripts.build) console.log(location.slice("apps/".length));
+            }
+          ' | LC_ALL=C sort)"
+          if [ "$expected" != "$with_build" ]; then
+            echo "::error::PAGES_APPS (${expected//$'\n'/ }) differs from the app workspaces with a build script (${with_build//$'\n'/ }). Update PAGES_APPS in pages.yml."
+            fail=1
+          fi
+          for app in $expected; do
+            test -s ".pages/apps/$app/index.html" || { echo "::error::.pages/apps/$app/index.html is missing or empty"; fail=1; }
+          done
+          [ "$fail" -eq 0 ] || exit 1
+          echo "apps: ${expected//$'\n'/ }"
+          echo "files: $(find .pages -type f | wc -l)"
+          echo "bytes: $(find .pages -type f -printf '%s\n' | awk '{s+=$1} END {print s+0}')"
+          sha256sum .pages/index.html
+          find .pages -maxdepth 4 -name index.html | LC_ALL=C sort
+
+      - name: Upload Pages artifact
+        # Hidden files are left out (the action's default since v4). The only
+        # one compose-pages.sh writes is .nojekyll, which has no effect on a
+        # site published by a workflow: Jekyll only runs for branch builds.
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: .pages
+
   deploy:
+    name: deploy
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write # to deploy to Pages
+      id-token: write # to prove the deployment comes from this workflow
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -13,8 +13,10 @@
 #   - gets a read-only GITHUB_TOKEN, uses no secrets and no OIDC token;
 #   - does not persist git credentials after checkout;
 #   - restores and saves no cache (nothing a PR writes can reach another run);
-#   - installs with `--ignore-scripts` (no lifecycle scripts) and fails if
-#     the install would change yarn.lock;
+#   - installs with `--ignore-scripts` (no lifecycle scripts) and without
+#     `--frozen-lockfile`, then fails if the install changed yarn.lock in any
+#     way (so a missing, drifted or dead lockfile entry turns the PR red);
+#     the production deploys install with `--frozen-lockfile` instead;
 #   - pins every action to a full commit SHA;
 #   - is independent from every deploy workflow.
 
@@ -68,7 +70,10 @@ jobs:
           node --version
           yarn --version
           # The repo is yarn 1 only (packageManager: yarn@1.22.22).
-          yarn --version | grep -q '^1\.'
+          case "$(yarn --version)" in
+            1.*) ;;
+            *) echo "::error::yarn 1.x required (packageManager: yarn@1.22.22), got $(yarn --version)"; exit 1 ;;
+          esac
 
       - name: Check package.json files against yarn.lock
         # Same check the production build of bff-api runs before installing,
@@ -82,9 +87,13 @@ jobs:
         # and the vite build were verified to work without them: esbuild and
         # friends ship their native binaries as optional dependencies.
         #
-        # yarn 1 --frozen-lockfile does not catch a workspace package.json
-        # that drifted from yarn.lock (it installs from the registry and stays
-        # green). So install normally and fail if yarn.lock would change.
+        # No --frozen-lockfile here, on purpose: yarn 1 with that flag never
+        # writes yarn.lock, so the diff below could not fail, and a stale
+        # (dead) entry in yarn.lock would pass. Without it, yarn rewrites the
+        # lockfile whenever it is not exactly what package.json resolves to
+        # (missing range, drifted workspace, dead entry), and the diff fails
+        # the job. The production deploys install with --frozen-lockfile:
+        # they must never resolve anything that is not in yarn.lock.
         run: |
           yarn install --ignore-scripts --non-interactive
           git diff --exit-code -- yarn.lock

@@ -2,7 +2,7 @@ name: Validate Primary Source Links
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main]
     paths:
       - 'web/src/data/**'
       - 'scripts/verify-sources.mjs'
@@ -10,23 +10,37 @@ on:
     - cron: '0 6 * * 1' # weekly, Mondays 06:00 UTC
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node (version from .nvmrc)
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
+
       - name: Run link verifier
-        run: |
-          node scripts/verify-sources.mjs --ci || exit 1
+        # Node built-ins only, no install needed.
+        run: node scripts/verify-sources.mjs --ci
+
       - name: Upload report
-        if: always()
-        uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: links-report
           path: reports/links.md
-
-
