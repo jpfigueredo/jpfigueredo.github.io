@@ -2,10 +2,12 @@
 #   node-checks: typecheck, tests (incl. seed-vs-schema validation), a guard
 #                against an empty or skipped test suite, lint, build, and a
 #                dependency audit that fails on high or critical advisories.
-#   rust-checks: cargo fmt, clippy and tests for services/rust-api. It always
-#                reports a result (so it can be a required check), but only
-#                compiles when the PR touches Rust; otherwise it passes in
-#                seconds.
+#   rust-checks: cargo fmt, clippy and tests for services/rust-api (clippy
+#                and tests --locked to Cargo.lock), a guard against an empty
+#                or skipped Rust test suite, and a docker build + smoke run of
+#                its Dockerfile (the image Render builds). It always reports a
+#                result (so it can be a required check), but only compiles
+#                when the PR touches Rust; otherwise it passes in seconds.
 #
 # Security model: a PR (including one from a fork) runs untrusted code here
 # (install, lint, tests). So this workflow:
@@ -196,7 +198,7 @@ jobs:
   rust-checks:
     name: rust-checks
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: read
     env:
@@ -207,6 +209,10 @@ jobs:
       RUSTUP_TOOLCHAIN: "1.99.0"
       CARGO_TERM_COLOR: always
       CARGO_INCREMENTAL: "0"
+      # Minimum number of Rust tests that must pass (route tests in
+      # services/rust-api/src/main.rs). Raise it when you add tests; see
+      # scripts/check-cargo-tests.sh.
+      RUST_MIN_TESTS: "9"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -228,9 +234,11 @@ jobs:
             exit 0
           fi
           # Root-level cargo/rustfmt/clippy config also changes what cargo
-          # does in services/rust-api, so it triggers the checks too.
+          # does in services/rust-api, so it triggers the checks too, and so
+          # does the test-suite guard script.
           changed="$(git diff --name-only HEAD^1 HEAD -- \
             services/rust-api .github/workflows/ci.yml \
+            scripts/check-cargo-tests.sh \
             Cargo.toml Cargo.lock rustfmt.toml .rustfmt.toml \
             clippy.toml .clippy.toml .cargo)"
           if [ -n "$changed" ]; then
@@ -256,11 +264,13 @@ jobs:
       # target/ or ~/.cargo written by PR code is a poisoning vector), so each
       # run compiles from scratch.
       #
-      # No --locked: services/rust-api has no committed Cargo.lock (it is in
-      # its .gitignore), so dependencies are resolved on every run. Add
-      # --locked to the cargo commands below once Cargo.lock is committed.
+      # Every cargo command that resolves dependencies runs with --locked:
+      # they come only from services/rust-api/Cargo.lock, and a Cargo.toml
+      # change that needs a different lock fails the job instead of resolving
+      # silently. (cargo fmt reads no dependencies and has no --locked flag.)
       #
-      # fmt, clippy and test run even if an earlier one failed.
+      # fmt, clippy, test and the docker build run even if an earlier one
+      # failed.
 
       - name: cargo fmt --check
         if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
@@ -270,9 +280,73 @@ jobs:
       - name: cargo clippy
         if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
         working-directory: services/rust-api
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --locked -- -D warnings
 
       - name: cargo test
+        id: cargo-test
         if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
         working-directory: services/rust-api
-        run: cargo test
+        run: cargo test --locked 2>&1 | tee "$RUNNER_TEMP/cargo-test.txt"
+
+      - name: Guard against an empty or skipped Rust test suite
+        if: ${{ !cancelled() && steps.cargo-test.outcome == 'success' }}
+        # cargo test exits 0 with zero tests, or with tests ignored or
+        # filtered out. This fails unless at least RUST_MIN_TESTS passed and
+        # none was ignored or filtered out.
+        run: bash scripts/check-cargo-tests.sh "$RUNNER_TEMP/cargo-test.txt" "$RUST_MIN_TESTS"
+
+      - name: docker build (services/rust-api)
+        id: docker-build
+        if: ${{ !cancelled() && steps.changes.outputs.rust == 'true' }}
+        # Builds the same Dockerfile Render builds, so a broken image fails
+        # here and not at deploy time. Local image only: no push, no registry
+        # login, no secrets, no build cache imported or exported. Base images
+        # are pinned by digest in the Dockerfile.
+        working-directory: services/rust-api
+        run: |
+          docker version --format 'docker client {{.Client.Version}}, server {{.Server.Version}}'
+          docker build --progress=plain --tag rust-api:ci .
+          docker image inspect rust-api:ci --format 'image {{.Id}}, user {{.Config.User}}, healthcheck {{json .Config.Healthcheck.Test}}'
+
+      - name: Smoke test the image (HEALTHCHECK and /health)
+        if: ${{ !cancelled() && steps.docker-build.outcome == 'success' }}
+        # Runs the image as built (no extra flags), waits for its own
+        # HEALTHCHECK to report healthy, checks that the process runs as uid
+        # 10001 (the USER in the Dockerfile) and that /health answers
+        # "status":"ok" from the host. Port bound to 127.0.0.1 only.
+        run: |
+          docker run --detach --name rust-api-ci --publish 127.0.0.1:8080:8080 rust-api:ci
+          health=starting
+          # Waits up to 90s for the first HEALTHCHECK result (the interval is
+          # 30s; recent engines also probe during the 10s start period).
+          for _ in $(seq 1 45); do
+            health="$(docker inspect --format '{{.State.Health.Status}}' rust-api-ci)"
+            [ "$health" = starting ] || break
+            sleep 2
+          done
+          docker logs rust-api-ci
+          if [ "$health" != healthy ]; then
+            echo "::error title=docker smoke test::Container health is '$health', expected 'healthy'."
+            docker inspect --format '{{json .State.Health}}' rust-api-ci
+            exit 1
+          fi
+          echo "Container health: $health"
+          uid="$(docker exec rust-api-ci id -u)"
+          echo "Container uid: $uid"
+          if [ "$uid" != "10001" ]; then
+            echo "::error title=docker smoke test::Container runs as uid '$uid', expected 10001."
+            exit 1
+          fi
+          body="$(curl --fail --silent --show-error --max-time 10 http://127.0.0.1:8080/health)"
+          echo "GET /health: $body"
+          if ! grep -q '"status":"ok"' <<<"$body"; then
+            echo "::error title=docker smoke test::/health did not return \"status\":\"ok\"."
+            exit 1
+          fi
+
+      - name: Remove the smoke test container
+        if: ${{ always() }}
+        # Idempotent cleanup: the container does not exist when the build or
+        # the smoke test did not get far enough to start it, so a failing
+        # `docker rm` is expected there and must not fail the job.
+        run: docker rm -f rust-api-ci || true

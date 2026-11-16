@@ -16,7 +16,7 @@ This is a template project for building high-performance REST APIs with Rust. It
 
 ### Prerequisites
 
-- [Rust](https://www.rust-lang.org/tools/install) 1.75+
+- [Rust](https://www.rust-lang.org/tools/install) 1.99.0, the toolchain CI and the Dockerfile use (the crates pinned in `Cargo.lock` need at least 1.89)
 - [Cargo](https://doc.rust-lang.org/cargo/) (comes with Rust)
 
 ### Development

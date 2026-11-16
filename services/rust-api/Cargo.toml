@@ -2,15 +2,20 @@
 name = "rust-api"
 version = "0.1.0"
 edition = "2021"
-authors = ["João Figueredo <jp.figueredo8@gmail.com>"]
 description = "High-performance REST API built with Rust and Axum"
 license = "MIT"
+
+# Declared explicitly (it is also what Cargo infers) so the manifest is valid
+# before src/ exists: the Dockerfile runs `cargo fetch --locked` with only
+# Cargo.toml and Cargo.lock copied in, to cache the dependency download layer.
+[[bin]]
+name = "rust-api"
+path = "src/main.rs"
 
 [dependencies]
 # Web framework
 axum = { version = "0.7", features = ["macros", "multipart"] }
 tokio = { version = "1", features = ["full"] }
-tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -32,7 +37,7 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.6", features = ["v4", "serde"] }
 
 [dev-dependencies]
-# Testing
-mockito = "1.2"
-reqwest = { version = "0.11", features = ["json"] }
+# Route tests drive the Router in-process with tower::ServiceExt::oneshot
+# (no socket, no network). Same tower major as axum 0.7 uses.
+tower = { version = "0.5", features = ["util"] }
 
