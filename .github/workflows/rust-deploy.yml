@@ -7,10 +7,18 @@ on:
       - 'services/rust-api/**'
   workflow_dispatch: {}
 
+# The job only calls the Render deploy hook: no checkout, no token scopes.
+permissions: {}
+
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
     steps:
       - name: Trigger Render deploy
+        env:
+          RENDER_RUST_HOOK: ${{ secrets.RENDER_RUST_HOOK }}
         run: |
-          curl -f -X POST "${{ secrets.RENDER_RUST_HOOK }}"
+          test -n "$RENDER_RUST_HOOK" || { echo "::error::RENDER_RUST_HOOK is not set"; exit 1; }
+          curl --fail --silent --show-error --max-time 30 -X POST "$RENDER_RUST_HOOK"

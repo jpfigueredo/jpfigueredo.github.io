@@ -1,28 +1,87 @@
+# Deploys services/edge-proxy (Cloudflare Worker).
+#
+# Wrangler comes from yarn.lock (the edge-proxy workspace devDependency),
+# installed with lifecycle scripts off, so the deploy uses the exact version
+# and tarball hash recorded in the lockfile. The Cloudflare token is only
+# present in the deploy step.
+
 name: Deploy Cloudflare Worker (edge-proxy)
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main]
     paths:
       - 'services/edge-proxy/**'
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+
+concurrency:
+  group: edge-proxy-deploy
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  WRANGLER_SEND_METRICS: "false"
+
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    name: deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node (version from .nvmrc)
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-      - name: Install wrangler
-        run: npm i -g wrangler@4
-      - name: Publish worker
-        working-directory: services/edge-proxy
+          # No dependency cache on purpose (deploy job with a deploy token).
+
+      - name: Toolchain versions
+        run: |
+          node --version
+          yarn --version
+          # The repo is yarn 1 only (packageManager: yarn@1.22.22).
+          yarn --version | grep -q '^1\.'
+
+      - name: Check package.json files against yarn.lock
+        run: node scripts/check-lockfile-sync.mjs
+
+      - name: Install dependencies (from yarn.lock, no lifecycle scripts)
+        run: yarn install --frozen-lockfile --ignore-scripts --non-interactive
+
+      - name: Check installed wrangler against yarn.lock
+        # Fails if the wrangler that Node resolves from services/edge-proxy
+        # is not the version yarn.lock pins, then prints that version.
+        run: |
+          node scripts/check-lockfile-sync.mjs --installed services/edge-proxy
+          yarn -s workspace edge-proxy wrangler --version
+
+      - name: Check deploy settings
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           BFF_HOST: ${{ vars.BFF_HOST }}
         run: |
-          npx wrangler deploy --var BFF_HOST:${BFF_HOST}
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::secret CLOUDFLARE_API_TOKEN is not set"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::secret CLOUDFLARE_ACCOUNT_ID is not set"; exit 1; }
+          test -n "$BFF_HOST" || { echo "::error::variable BFF_HOST is not set"; exit 1; }
+
+      - name: Publish worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BFF_HOST: ${{ vars.BFF_HOST }}
+        # `yarn workspace` runs wrangler from services/edge-proxy, where
+        # wrangler.toml lives.
+        run: yarn workspace edge-proxy wrangler deploy --var "BFF_HOST:${BFF_HOST}"
