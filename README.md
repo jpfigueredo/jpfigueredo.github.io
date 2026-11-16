@@ -86,12 +86,13 @@ jpfigueredo.github.io/
 - **`yarn.lock` is always committed.** A pull request that adds, removes or
   upgrades a dependency must include the matching `yarn.lock` diff, so the
   exact versions and tarball hashes are reviewed with the change.
-- CI and the deploys that install Node dependencies (GitHub Pages, the
-  edge-proxy Worker, the BFF build on Render) run
-  `node scripts/check-lockfile-sync.mjs` and then
-  `yarn install --frozen-lockfile --ignore-scripts`, so a `package.json` that
-  drifted from `yarn.lock` fails the run instead of being resolved from the
-  registry.
+- Every install in CI and deploys runs `node scripts/check-lockfile-sync.mjs`
+  first and skips lifecycle scripts (`--ignore-scripts`):
+  - pull request CI runs `yarn install` and fails if `yarn.lock` changed, so
+    a missing, drifted or stale lockfile entry turns the PR red;
+  - the deploys that install Node dependencies (GitHub Pages, the edge-proxy
+    Worker, the BFF build on Render) use `--frozen-lockfile`, so they never
+    resolve anything that is not in `yarn.lock`.
 
 ### Development
 ```bash
@@ -102,22 +103,23 @@ cd jpfigueredo.github.io
 # Install dependencies
 yarn install
 
-# Start development server
-yarn dev
+# Start every dev server (turbo, in parallel)
+yarn start:dev
 
-# Build for production
-yarn build
-
-# Preview production build
-yarn preview
+# Build everything, compose .pages/ and serve it on http://localhost:3000
+yarn start:fast
 ```
 
 ### Available Scripts
 ```bash
-yarn dev          # Start development server
-yarn build        # Build all packages
-yarn lint         # Run ESLint
-yarn typecheck    # Run TypeScript checks
+yarn start:dev      # Dev servers for all packages (turbo run dev --parallel)
+yarn build          # Build all packages (turbo run build)
+yarn compose:pages  # Assemble .pages/ from web/dist and apps/**/dist
+yarn serve:pages    # Serve .pages/ on port 3000
+yarn start:fast     # build + compose:pages + serve:pages
+yarn lint           # ESLint (turbo run lint)
+yarn typecheck      # TypeScript checks (turbo run typecheck)
+yarn test           # Tests (turbo run test)
 ```
 
 ## 🎨 Design Features
