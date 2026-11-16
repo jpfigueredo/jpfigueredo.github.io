@@ -17,10 +17,22 @@ permissions: {}
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {}
+    # The hook URL is a secret of this environment (its deployment policy
+    # must allow the main branch only).
+    environment: render
     steps:
+      - name: Only deploy from main
+        # Backs up the environment policy, and stops a
+        # manual run on another branch before any secret is read.
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Deploys run only from refs/heads/main, this run is on $GITHUB_REF."
+            exit 1
+          fi
+
       - name: Trigger Render deploy
         env:
           RENDER_BFF_HOOK: ${{ secrets.RENDER_BFF_HOOK }}
