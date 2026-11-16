@@ -1,0 +1,7 @@
+# Allowlist: the build context holds only what the Dockerfile copies.
+# Everything else (target/, .git, .env files, editor and OS files, docs)
+# never reaches the Docker daemon or a build layer.
+*
+!Cargo.toml
+!Cargo.lock
+!src/
