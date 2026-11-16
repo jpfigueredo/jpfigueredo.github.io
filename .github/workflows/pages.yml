@@ -29,10 +29,12 @@ on:
 permissions:
   contents: read
 
-# One deployment at a time; a newer push waits instead of cancelling a
-# deployment that is already in progress.
+# One run per ref at a time; a newer push waits instead of cancelling a
+# deployment that is already in progress. Grouped by ref so a manual run on
+# another branch (rejected at deploy anyway) never queues behind or ahead of
+# a main deployment.
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: false
 
 defaults:
@@ -71,7 +73,10 @@ jobs:
           node --version
           yarn --version
           # The repo is yarn 1 only (packageManager: yarn@1.22.22).
-          yarn --version | grep -q '^1\.'
+          case "$(yarn --version)" in
+            1.*) ;;
+            *) echo "::error::yarn 1.x required (packageManager: yarn@1.22.22), got $(yarn --version)"; exit 1 ;;
+          esac
 
       - name: Check package.json files against yarn.lock
         # yarn 1 --frozen-lockfile does not catch a workspace package.json
@@ -91,15 +96,44 @@ jobs:
         run: bash scripts/compose-pages.sh
 
       - name: Verify Pages artifact
-        # Fails if the site entry pages are missing, and prints what will be
-        # published (file count, total size, hash of the entry page).
+        # Fails if the site entry pages or any app that must go live is
+        # missing from .pages, then prints what will be published.
+        #
+        # PAGES_APPS is the reviewed list of apps published under /apps/
+        # (paths relative to apps/). The step also fails if the list differs
+        # from the yarn workspaces under apps/ that have a `build` script, so
+        # an app added, removed or left without a build is caught here. To
+        # add or remove an app, change its workspace and this list together.
+        env:
+          PAGES_APPS: kafka-viz ohara/front sw-timeline
         run: |
-          test -s .pages/index.html || { echo "::error::.pages/index.html is missing or empty"; exit 1; }
-          test -s .pages/404.html || { echo "::error::.pages/404.html is missing or empty"; exit 1; }
+          fail=0
+          for page in index.html 404.html; do
+            test -s ".pages/$page" || { echo "::error::.pages/$page is missing or empty"; fail=1; }
+          done
+          expected="$(printf '%s\n' $PAGES_APPS | LC_ALL=C sort)"
+          with_build="$(yarn -s workspaces info | node -e '
+            const fs = require("fs");
+            const workspaces = JSON.parse(fs.readFileSync(0, "utf8"));
+            for (const { location } of Object.values(workspaces)) {
+              if (!location.startsWith("apps/")) continue;
+              const pkg = JSON.parse(fs.readFileSync(`${location}/package.json`, "utf8"));
+              if (pkg.scripts && pkg.scripts.build) console.log(location.slice("apps/".length));
+            }
+          ' | LC_ALL=C sort)"
+          if [ "$expected" != "$with_build" ]; then
+            echo "::error::PAGES_APPS (${expected//$'\n'/ }) differs from the app workspaces with a build script (${with_build//$'\n'/ }). Update PAGES_APPS in pages.yml."
+            fail=1
+          fi
+          for app in $expected; do
+            test -s ".pages/apps/$app/index.html" || { echo "::error::.pages/apps/$app/index.html is missing or empty"; fail=1; }
+          done
+          [ "$fail" -eq 0 ] || exit 1
+          echo "apps: ${expected//$'\n'/ }"
           echo "files: $(find .pages -type f | wc -l)"
           echo "bytes: $(find .pages -type f -printf '%s\n' | awk '{s+=$1} END {print s+0}')"
           sha256sum .pages/index.html
-          find .pages -maxdepth 4 -name index.html | sort
+          find .pages -maxdepth 4 -name index.html | LC_ALL=C sort
 
       - name: Upload Pages artifact
         # Hidden files are left out (the action's default since v4). The only
