@@ -82,11 +82,13 @@ jobs:
         # and the vite build were verified to work without them: esbuild and
         # friends ship their native binaries as optional dependencies.
         #
-        # yarn 1 --frozen-lockfile does not catch a workspace package.json
-        # that drifted from yarn.lock (it installs from the registry and stays
-        # green). So install normally and fail if yarn.lock would change.
+        # --frozen-lockfile fails if yarn.lock would need an update. It does
+        # not catch a workspace package.json that drifted from yarn.lock (yarn
+        # 1 installs the missing range from the registry and stays green):
+        # the lockfile sync check above covers that case, and the git diff
+        # stays as a last guard against any rewrite of yarn.lock.
         run: |
-          yarn install --ignore-scripts --non-interactive
+          yarn install --frozen-lockfile --ignore-scripts --non-interactive
           git diff --exit-code -- yarn.lock
 
       - name: Dependency audit (fails on high or critical)

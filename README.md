@@ -77,8 +77,21 @@ jpfigueredo.github.io/
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js 20+ (LTS)
-- Yarn 1.22.22+
+- Node.js 24 (LTS; the exact major is in `.nvmrc`)
+- Yarn 1 (`packageManager: yarn@1.22.22` in `package.json`)
+
+### Package manager and lockfile
+- **Yarn 1 only.** Do not use npm or pnpm in this repo: `yarn.lock` is the
+  only lockfile, and `package-lock.json` / `pnpm-lock.yaml` are ignored.
+- **`yarn.lock` is always committed.** A pull request that adds, removes or
+  upgrades a dependency must include the matching `yarn.lock` diff, so the
+  exact versions and tarball hashes are reviewed with the change.
+- CI and the deploys that install Node dependencies (GitHub Pages, the
+  edge-proxy Worker, the BFF build on Render) run
+  `node scripts/check-lockfile-sync.mjs` and then
+  `yarn install --frozen-lockfile --ignore-scripts`, so a `package.json` that
+  drifted from `yarn.lock` fails the run instead of being resolved from the
+  registry.
 
 ### Development
 ```bash
