@@ -171,8 +171,8 @@ node scripts/lock-entry-ages.mjs --head dependabot-<n>
    (`edge-proxy.yml`). For these, read the full diff between the old and new
    SHA or version, including the built `dist/` of an action, before merging.
 8. **CI.** `node-checks` and `rust-checks` are green, `rust-checks` actually
-   built Rust for Cargo and Docker PRs, and the `yarn audit` step reports no
-   new advisories. Dependabot PRs run CI with a read-only token and no
+   built Rust for Cargo and Docker PRs, and the advisory gate reports no new
+   advisories (see "Dependency advisories" below). Dependabot PRs run CI with a read-only token and no
    secrets, like a pull request from a fork. To try the branch locally, never
    run lifecycle scripts: `yarn install --ignore-scripts`, as CI does.
 9. **Merge.** Squash into `develop`, by hand. To refresh a Dependabot branch,
@@ -189,3 +189,67 @@ of `rust-checks` (`scripts/check-rust-toolchain.sh`) annotates the Dockerfile
 with the values to change. The same PR must set all three to the new version:
 add the two edits to the Dependabot branch, or close it and open a
 `feature/*` PR with the tag, digest and both edits.
+
+## Dependency advisories
+
+`scripts/advisory-gate.mjs` checks every version in `yarn.lock` and
+`services/rust-api/Cargo.lock` against [OSV](https://osv.dev) (GitHub
+Advisory Database and RustSec, the data behind the Dependabot alerts). It
+needs no token and installs nothing.
+
+- **PR CI** (`node-checks`, ratchet mode): fails if the PR adds an advisory
+  that the base branch does not have, for the same package and workspace,
+  unless the allowlist accepts it. Any severity counts. The gate code comes
+  from the base branch, so a PR that edits the script is judged by the old
+  version.
+- **Weekly** (`.github/workflows/advisories.yml`, absolute mode on
+  `develop`): fails on every advisory the allowlist does not accept, so the
+  existing ones stay visible until they are fixed.
+- Both fail if OSV cannot be queried, or if an allowlist entry is invalid,
+  expired, or further away than its severity allows.
+
+Run it locally the way a reviewer should, with the `develop` copy of the
+script against the PR branch:
+
+```bash
+git fetch origin develop "+pull/<n>/head:pr-<n>"
+git show origin/develop:scripts/advisory-gate.mjs > /tmp/advisory-gate.mjs
+node /tmp/advisory-gate.mjs --mode ratchet --base origin/develop --head pr-<n>
+node /tmp/advisory-gate.mjs --mode absolute --head origin/develop   # all debt
+```
+
+### Accepting an advisory (`security/advisory-allowlist.json`)
+
+Upgrading is the default. An entry is a decision that the advisory does not
+affect this project, in VEX terms, with a date to look at it again:
+
+```json
+{
+  "id": "GHSA-xxxx-xxxx-xxxx",
+  "ecosystem": "npm",
+  "package": "react-router",
+  "version": "6.30.6",
+  "paths": ["web"],
+  "reason": "Why the vulnerable code cannot be reached here, in one or two sentences.",
+  "justification": "vulnerable_code_not_in_execute_path",
+  "reviewBy": "2027-02-17"
+}
+```
+
+- `id`: GHSA, RUSTSEC or CVE id; aliases match (one entry for
+  GHSA-m665-v7pm-7grj also covers its RUSTSEC id).
+- `ecosystem`: `npm` or `crates.io`. `version` (exact) or `range`
+  (`>=6.0.0 <7.0.0`; comparators `>= > <= < =`), not both.
+- `paths`: the workspaces the decision covers (`web`, `apps/ohara/front`,
+  `services/rust-api`, `.` for the root). A new workspace that pulls in the
+  same package is a new finding.
+- `justification`: one of `component_not_present`,
+  `vulnerable_code_not_present`, `vulnerable_code_not_in_execute_path`,
+  `vulnerable_code_cannot_be_controlled_by_adversary`,
+  `inline_mitigations_already_exist`.
+- `reviewBy`: at most 30 days ahead for critical, high or unknown severity,
+  90 days for the rest. The gate warns 14 days before and fails after it.
+
+Severity comes from the OSV record: GitHub's label (`database_specific.severity`)
+when there is one, else the CVSS v3 base score, else `info` for RustSec
+informational advisories (unmaintained, unsound), else `unknown`.
