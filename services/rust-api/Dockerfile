@@ -37,8 +37,19 @@ ENV CARGO_HOME=/usr/local/cargo \
 
 WORKDIR /app
 
-# Print the toolchain and fail early if it is not the one CI uses.
-RUN rustc --version --verbose; cargo --version; test "$(rustc --version | cut -d' ' -f2)" = "1.99.0"
+# Print the toolchain and fail early if it is not the one CI uses. A PR that
+# changes the rust image tag (e.g. from Dependabot) fails here on purpose
+# until it also updates `expected` below and RUSTUP_TOOLCHAIN in
+# .github/workflows/ci.yml; scripts/check-rust-toolchain.sh checks the same
+# thing in CI before the build.
+RUN expected="1.99.0"; \
+    rustc --version --verbose; \
+    cargo --version; \
+    actual="$(rustc --version | cut -d' ' -f2)"; \
+    if [ "$actual" != "$expected" ]; then \
+      echo "::error title=Rust toolchain mismatch::the rust image has rustc $actual, this Dockerfile expects $expected. A PR that changes the rust image must also set expected=\"$actual\" here and RUSTUP_TOOLCHAIN: \"$actual\" in .github/workflows/ci.yml." >&2; \
+      exit 1; \
+    fi
 
 # Manifests first: this layer and the download below are reused until
 # Cargo.toml or Cargo.lock change.

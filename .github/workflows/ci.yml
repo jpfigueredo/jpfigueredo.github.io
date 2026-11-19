@@ -5,7 +5,9 @@
 #   rust-checks: cargo fmt, clippy and tests for services/rust-api (clippy
 #                and tests --locked to Cargo.lock), a guard against an empty
 #                or skipped Rust test suite, and a docker build + smoke run of
-#                its Dockerfile (the image Render builds). It always reports a
+#                its Dockerfile (the image Render builds), after checking that
+#                the rust image tag, the Dockerfile's expected rustc and
+#                RUSTUP_TOOLCHAIN agree. It always reports a
 #                result (so it can be a required check), but only compiles
 #                when the PR touches Rust; otherwise it passes in seconds.
 #
@@ -249,6 +251,14 @@ jobs:
             echo "No change under services/rust-api, root cargo config or this workflow: skipping the Rust checks."
             echo "rust=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Rust version agrees (Dockerfile image, Dockerfile check, RUSTUP_TOOLCHAIN)
+        # Runs on every PR (no compile, a few greps). A PR that changes the
+        # rust image tag (e.g. from Dependabot) must also change the
+        # Dockerfile's expected rustc and RUSTUP_TOOLCHAIN above; this fails
+        # with an annotation that says so instead of failing inside
+        # `docker build`.
+        run: bash scripts/check-rust-toolchain.sh services/rust-api/Dockerfile "$RUSTUP_TOOLCHAIN"
 
       - name: Install Rust toolchain
         id: toolchain

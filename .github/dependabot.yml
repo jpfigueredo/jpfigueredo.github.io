@@ -1,0 +1,173 @@
+# Dependabot version updates.
+#
+# Everything here is pinned (yarn.lock, Cargo.lock, base images by digest,
+# actions by commit SHA). Pins keep builds reproducible, but they also freeze
+# known bugs and vulnerabilities; this file is the process that moves them.
+#
+# Rules for every ecosystem below:
+#   - no `target-branch`: pull requests go to the default branch (`develop`),
+#     like any feature PR. Setting it would make the options of the block
+#     (groups, labels, commit prefixes) stop applying to security updates;
+#   - every PR runs the same CI (node-checks, rust-checks): read-only token,
+#     no secrets, the same threat model as a pull request from a fork;
+#   - weekly, on Monday 09:00 UTC;
+#   - cooldown of 7 days. It only covers the version of the dependency the
+#     PR is about. Transitive versions that come with it in yarn.lock, and
+#     Cargo lockfile-only updates, can be much younger; check them with
+#     `node scripts/lock-entry-ages.mjs`. Security updates are not delayed;
+#   - minor and patch updates are grouped into one PR per group; major
+#     updates come one dependency per PR, so a breaking change is reviewed
+#     on its own;
+#   - `labels: []`: no labels. Without it, Dependabot creates and applies
+#     `dependencies` plus one label per ecosystem;
+#   - nothing is merged automatically. Review steps: CONTRIBUTING.md,
+#     "Dependency updates (Dependabot)".
+#
+# Options reference:
+# https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference
+
+version: 2
+
+updates:
+  # ------------------------------------------------------------ npm (yarn 1)
+  # Root package.json + yarn.lock. Dependabot follows the `workspaces` field,
+  # so every workspace package.json is covered by this one entry.
+  # archive/ holds no package.json (see archive/angular-demo/README.md); the
+  # exclusion keeps it out of version updates if one is added there.
+  - package-ecosystem: "npm"
+    directory: "/"
+    exclude-paths:
+      - "archive/**"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    cooldown:
+      default-days: 7
+    # `increase`: the range in package.json moves with the version in
+    # yarn.lock (e.g. ^2.11.10 -> ^2.12.0), so the manifest states the
+    # version that was actually tested. Same style as manual bumps here.
+    versioning-strategy: "increase"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    labels: []
+    # A dependency goes to the first group it matches, so `three` comes
+    # first: three (a dependency) and @types/three (a devDependency) must
+    # move together.
+    groups:
+      three:
+        applies-to: version-updates
+        patterns:
+          - "three"
+          - "@types/three"
+      npm-development:
+        applies-to: version-updates
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+      npm-production:
+        applies-to: version-updates
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+      npm-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ------------------------------------------------------- cargo (rust-api)
+  - package-ecosystem: "cargo"
+    directory: "/services/rust-api"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    cooldown:
+      default-days: 7
+    # `increase-if-necessary`: Cargo.toml keeps its ranges (e.g. "0.7") while
+    # the new version fits them, and only Cargo.lock changes. A version
+    # outside the range (a major, or a 0.x minor) rewrites the requirement.
+    # Lockfile-only updates can skip the cooldown (open Dependabot bug), so
+    # check Cargo.lock ages on every cargo PR.
+    versioning-strategy: "increase-if-necessary"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "build(deps)"
+    labels: []
+    groups:
+      cargo-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      cargo-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ---------------------------------------------- docker (rust-api images)
+  # services/rust-api/Dockerfile pins `image:tag@sha256:digest`. Dependabot
+  # proposes a newer tag with its digest or, for a tag that is pushed again
+  # (debian:trixie-slim), the new digest of the same tag.
+  # No group: each image gets its own PR, so a Debian runtime refresh never
+  # waits on a Rust toolchain upgrade.
+  #
+  # rust: minor and patch tags are proposed; majors are ignored. Such a PR
+  # fails CI on purpose until the same PR also updates the expected rustc
+  # version in the Dockerfile and RUSTUP_TOOLCHAIN in
+  # .github/workflows/ci.yml, which Dependabot does not edit. A rust version
+  # tag is not pushed again after the next Rust release, so the builder (and
+  # the CA bundle the runtime copies from it) only gets fresh when the
+  # version moves.
+  - package-ecosystem: "docker"
+    directory: "/services/rust-api"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "build(deps)"
+    labels: []
+    ignore:
+      - dependency-name: "rust"
+        update-types:
+          - "version-update:semver-major"
+
+  # ---------------------------------------------------------- GitHub Actions
+  # Actions are pinned by full commit SHA with the tag in a same-line comment
+  # (`uses: owner/action@<sha> # vX.Y.Z`); Dependabot updates both.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "ci(deps)"
+    labels: []
+    groups:
+      actions-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
