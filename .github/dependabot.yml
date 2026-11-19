@@ -5,13 +5,16 @@
 # known bugs and vulnerabilities; this file is the process that moves them.
 #
 # Rules for every ecosystem below:
-#   - pull requests target `develop` (the default branch), like any feature PR,
-#     and run the same CI (node-checks, rust-checks): read-only token, no
-#     secrets, the same threat model as a pull request from a fork;
+#   - no `target-branch`: pull requests go to the default branch (`develop`),
+#     like any feature PR. Setting it would make the options of the block
+#     (groups, labels, commit prefixes) stop applying to security updates;
+#   - every PR runs the same CI (node-checks, rust-checks): read-only token,
+#     no secrets, the same threat model as a pull request from a fork;
 #   - weekly, on Monday 09:00 UTC;
-#   - cooldown: a release is only proposed 7 days after it was published.
-#     Security updates are not delayed (cooldown applies to version updates
-#     only);
+#   - cooldown of 7 days. It only covers the version of the dependency the
+#     PR is about. Transitive versions that come with it in yarn.lock, and
+#     Cargo lockfile-only updates, can be much younger; check them with
+#     `node scripts/lock-entry-ages.mjs`. Security updates are not delayed;
 #   - minor and patch updates are grouped into one PR per group; major
 #     updates come one dependency per PR, so a breaking change is reviewed
 #     on its own;
@@ -29,12 +32,12 @@ updates:
   # ------------------------------------------------------------ npm (yarn 1)
   # Root package.json + yarn.lock. Dependabot follows the `workspaces` field,
   # so every workspace package.json is covered by this one entry.
-  # archive/ is not a workspace and has no lockfile.
+  # archive/ holds no package.json (see archive/angular-demo/README.md); the
+  # exclusion keeps it out of version updates if one is added there.
   - package-ecosystem: "npm"
     directory: "/"
     exclude-paths:
       - "archive/**"
-    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -50,7 +53,15 @@ updates:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
     labels: []
+    # A dependency goes to the first group it matches, so `three` comes
+    # first: three (a dependency) and @types/three (a devDependency) must
+    # move together.
     groups:
+      three:
+        applies-to: version-updates
+        patterns:
+          - "three"
+          - "@types/three"
       npm-development:
         applies-to: version-updates
         dependency-type: "development"
@@ -74,7 +85,6 @@ updates:
   # ------------------------------------------------------- cargo (rust-api)
   - package-ecosystem: "cargo"
     directory: "/services/rust-api"
-    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -84,6 +94,8 @@ updates:
     # `increase-if-necessary`: Cargo.toml keeps its ranges (e.g. "0.7") while
     # the new version fits them, and only Cargo.lock changes. A version
     # outside the range (a major, or a 0.x minor) rewrites the requirement.
+    # Lockfile-only updates can skip the cooldown (open Dependabot bug), so
+    # check Cargo.lock ages on every cargo PR.
     versioning-strategy: "increase-if-necessary"
     open-pull-requests-limit: 3
     commit-message:
@@ -107,13 +119,20 @@ updates:
 
   # ---------------------------------------------- docker (rust-api images)
   # services/rust-api/Dockerfile pins `image:tag@sha256:digest`. Dependabot
-  # updates the digest when the tag is rebuilt (e.g. a Debian security
-  # rebuild of debian:trixie-slim) and the tag plus digest when a newer
-  # version tag exists. Both images are grouped so builder and runtime move
-  # together and stay on the same Debian release.
+  # proposes a newer tag with its digest or, for a tag that is pushed again
+  # (debian:trixie-slim), the new digest of the same tag.
+  # No group: each image gets its own PR, so a Debian runtime refresh never
+  # waits on a Rust toolchain upgrade.
+  #
+  # rust: minor and patch tags are proposed; majors are ignored. Such a PR
+  # fails CI on purpose until the same PR also updates the expected rustc
+  # version in the Dockerfile and RUSTUP_TOOLCHAIN in
+  # .github/workflows/ci.yml, which Dependabot does not edit. A rust version
+  # tag is not pushed again after the next Rust release, so the builder (and
+  # the CA bundle the runtime copies from it) only gets fresh when the
+  # version moves.
   - package-ecosystem: "docker"
     directory: "/services/rust-api"
-    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -124,29 +143,16 @@ updates:
     commit-message:
       prefix: "build(deps)"
     labels: []
-    # New Rust versions are not proposed here: the toolchain version is also
-    # pinned in the Dockerfile's `rustc --version` check and in
-    # RUSTUP_TOOLCHAIN (.github/workflows/ci.yml), which Dependabot does not
-    # edit. A Rust upgrade is one manual PR that changes all three. Digest
-    # refreshes of the current rust tag still come through.
     ignore:
       - dependency-name: "rust"
         update-types:
           - "version-update:semver-major"
-          - "version-update:semver-minor"
-          - "version-update:semver-patch"
-    groups:
-      docker-images:
-        applies-to: version-updates
-        patterns:
-          - "*"
 
   # ---------------------------------------------------------- GitHub Actions
   # Actions are pinned by full commit SHA with the tag in a same-line comment
   # (`uses: owner/action@<sha> # vX.Y.Z`); Dependabot updates both.
   - package-ecosystem: "github-actions"
     directory: "/"
-    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"

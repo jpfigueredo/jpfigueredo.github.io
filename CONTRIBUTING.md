@@ -84,7 +84,8 @@ docs(contributing): add commit conventions
 
 Tags follow semver with a pre-release label: `v1.0.0-beta.1`, `v1.0.0-beta.2`, `v1.0.0`.
 
-A push of a tag matching `v*` triggers the GitHub Pages deploy workflow automatically.
+Tags only mark a release; they do not trigger a deploy. The GitHub Pages deploy
+(`.github/workflows/pages.yml`) runs on every push to `main`.
 
 ```bash
 git tag v1.0.0-beta.2
@@ -94,24 +95,33 @@ git push origin v1.0.0-beta.2
 ## Dependency updates (Dependabot)
 
 Configuration: `.github/dependabot.yml`. Every Monday Dependabot opens pull
-requests against `develop` for npm (yarn 1, root and workspaces), Cargo
-(`services/rust-api`), the base images in `services/rust-api/Dockerfile` and
-the GitHub Actions in `.github/workflows/`. Minor and patch updates are
-grouped; each major update is its own PR. Versions published less than 7 days
-ago are not proposed (cooldown); security updates skip the cooldown.
+requests against `develop` (the default branch) for npm (yarn 1, root and
+workspaces), Cargo (`services/rust-api`), the base images in
+`services/rust-api/Dockerfile` and the GitHub Actions in `.github/workflows/`.
+Minor and patch updates are grouped; each major update is its own PR.
+
+Cooldown: Dependabot waits 7 days after a release before proposing it, but
+only for the dependency the PR is about. Transitive versions pulled into
+`yarn.lock` with it, and Cargo lockfile-only updates, can be hours old.
+Security updates skip the cooldown on purpose.
 
 Nothing is merged automatically. A Dependabot PR gets the same review as any
-other PR, plus the checks below. To read the lockfile diff locally:
+other PR, plus the checks below.
 
 ```bash
-git fetch origin develop "pull/<n>/head:dependabot-<n>"
+gh pr view <n> --json author,headRefName,isCrossRepository
+git fetch origin develop "+pull/<n>/head:dependabot-<n>"
 git diff --stat origin/develop...dependabot-<n>
+node scripts/lock-entry-ages.mjs --head dependabot-<n>
 ```
 
-1. **Scope.** The diff only touches what the title says: `package.json` files
+1. **Author.** `author.login` is `app/dependabot`, `headRefName` starts with
+   `dependabot/` and `isCrossRepository` is `false`. A PR from a fork that
+   copies a Dependabot title is an ordinary external PR.
+2. **Scope.** The diff only touches what the title says: `package.json` files
    and `yarn.lock`; `Cargo.toml`/`Cargo.lock`; a `FROM` line of the
    Dockerfile; or `uses:` lines in workflows. Anything else: close the PR.
-2. **Lockfile.**
+3. **Lockfile.**
    - `yarn.lock`: every new `resolved` URL points to `registry.yarnpkg.com` or
      `registry.npmjs.org`, and every changed version has a new `integrity`.
      New packages (not only new versions) must be explained by the update.
@@ -124,30 +134,58 @@ git diff --stat origin/develop...dependabot-<n>
      command is in the Dockerfile header). Dependabot does not edit the
      `# image:tag (read <date>)` comment above the `FROM`; refresh it in a
      follow-up PR.
-   - Workflows: the SHA is the commit of the tag in the comment:
-     `gh api repos/<owner>/<action>/commits/<tag> --jq .sha`.
-3. **Provenance.** The release comes from the expected publisher and source
-   repository: `yarn info <package>@<version> dist --json` (npm provenance
-   attestations, when published, are under `attestations`); the crate's page
-   or `https://crates.io/api/v1/crates/<name>/<version>` (`published_by`);
-   for actions, the release in the action's own repository; for images,
-   `docker buildx imagetools inspect <image>@<digest> --format
-   '{{json .Provenance}}'` when the publisher attaches provenance.
-4. **Cooldown.** The version was published at least 7 days ago:
-   `yarn info <package> time --json`, the crates.io `created_at`, or
+   - Workflows: the new SHA is the commit of the tag in the comment, it
+     descends from the old SHA, and it is on the action's default branch:
+
+     ```bash
+     gh api repos/<owner>/<action>/commits/<tag> --jq .sha        # = new SHA
+     gh api repos/<owner>/<action>/compare/<old-sha>...<new-sha> --jq .status
+     # -> ahead
+     gh api repos/<owner>/<action>/compare/<new-sha>...<default-branch> --jq .status
+     # -> ahead or identical
+     ```
+
+4. **Age.** `node scripts/lock-entry-ages.mjs --head dependabot-<n>` lists
+   every new version in `yarn.lock` and `Cargo.lock`, direct or transitive,
+   with its publish date, and exits non-zero if one is younger than 7 days or
+   could not be looked up. For actions use
    `gh release view <tag> -R <owner>/<action> --json publishedAt`. A security
    update can be younger: read the advisory linked in the PR instead.
-5. **Changelog.** Read the release notes in the PR body. For a major update,
+5. **Provenance (npm).** For each package the PR updates directly:
+   `node scripts/npm-release-facts.mjs <package> <old-version> <new-version>`.
+   It reads `https://registry.npmjs.org/<package>/<version>` (`_npmUser`,
+   `dist.attestations.url`, `scripts`, `maintainers`) and the provenance
+   attestation (source repository, ref and workflow), and flags lost
+   provenance, a different source repository, new install scripts and a
+   different publisher or maintainer list. For crates, check `published_by`
+   at `https://crates.io/api/v1/crates/<name>/<version>`; for images,
+   `docker buildx imagetools inspect <image>@<digest> --format
+   '{{json .Provenance}}'` when the publisher attaches provenance.
+6. **Changelog.** Read the release notes in the PR body. For a major update,
    read the migration notes and check the code that uses the package; if code
    must change, close the PR and do the upgrade in a `feature/*` branch.
-6. **CI.** `node-checks` and `rust-checks` are green, `rust-checks` actually
+7. **Not covered by PR CI.** These run only in deploy workflows (push to
+   `main`, with deploy permissions or secrets), so a green PR says nothing
+   about them: `actions/upload-pages-artifact` and `actions/deploy-pages`
+   (`pages.yml`), `actions/upload-artifact` (`links.yml`) and `wrangler`
+   (`edge-proxy.yml`). For these, read the full diff between the old and new
+   SHA or version, including the built `dist/` of an action, before merging.
+8. **CI.** `node-checks` and `rust-checks` are green, `rust-checks` actually
    built Rust for Cargo and Docker PRs, and the `yarn audit` step reports no
    new advisories. Dependabot PRs run CI with a read-only token and no
-   secrets, like a pull request from a fork.
-7. **Merge.** Squash into `develop`, by hand. Do not push to a Dependabot
-   branch; to refresh it, comment `@dependabot rebase` on the PR.
+   secrets, like a pull request from a fork. To try the branch locally, never
+   run lifecycle scripts: `yarn install --ignore-scripts`, as CI does.
+9. **Merge.** Squash into `develop`, by hand. To refresh a Dependabot branch,
+   comment `@dependabot rebase` on the PR.
 
-The Rust toolchain is not updated by Dependabot (new `rust` image versions are
-ignored; digest refreshes of the current tag still come). To upgrade it, one
-`feature/*` PR changes the `rust` image tag and digest, the `rustc --version`
-check in the Dockerfile and `RUSTUP_TOOLCHAIN` in `.github/workflows/ci.yml`.
+### Rust toolchain upgrades
+
+The Rust version is pinned in three places: the `rust` image tag in
+`services/rust-api/Dockerfile`, `expected="X.Y.Z"` in the Dockerfile's rustc
+check, and `RUSTUP_TOOLCHAIN` in `.github/workflows/ci.yml`. Dependabot
+proposes new minor and patch `rust` tags (majors are ignored) but only edits
+the first. Its PR therefore fails on purpose: the "Rust version agrees" step
+of `rust-checks` (`scripts/check-rust-toolchain.sh`) annotates the Dockerfile
+with the values to change. The same PR must set all three to the new version:
+add the two edits to the Dependabot branch, or close it and open a
+`feature/*` PR with the tag, digest and both edits.
