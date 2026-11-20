@@ -1,0 +1,6 @@
+# Changes to CI, the scripts it runs and the security policy need the
+# repository owner's review. Pull requests are opened by an automation
+# identity, so this review is a second pair of eyes, not a self-approval.
+/.github/   @jpfigueredo
+/scripts/   @jpfigueredo
+/security/  @jpfigueredo
