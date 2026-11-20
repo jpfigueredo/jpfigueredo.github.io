@@ -85,18 +85,31 @@ jobs:
         #
         # The gate code is the base branch's copy (HEAD^1), not the PR's, so a
         # PR cannot weaken the check that judges it; it reads the lockfiles
-        # and the allowlist of the merge commit (HEAD) with `git show`. It runs
-        # before any step that executes PR code (check-lockfile-sync.mjs,
-        # yarn install: yarn 1 honours `yarn-path` in .yarnrc), so nothing the
-        # PR runs can reach it through GITHUB_ENV or GITHUB_PATH. A PR can
-        # still edit this workflow itself: changes to .github/ need review.
+        # and the allowlist of the merge commit (HEAD) with `git show`.
+        # Allowlist entries the PR adds or edits are listed as warnings for
+        # the reviewer.
+        #
+        # It must stay the first step that runs anything from the checkout.
+        # Every later step of this job executes code the PR controls, and
+        # code that ran earlier could reach this one through GITHUB_ENV or
+        # GITHUB_PATH:
+        #   - Advisory gate self-test: the PR's script and tests;
+        #   - Toolchain versions and every yarn command after it: yarn 1
+        #     runs the file named by `yarn-path` in the PR's .yarnrc;
+        #   - Check package.json files against yarn.lock: the PR's script;
+        #   - Install: yarn (as above), with --ignore-scripts;
+        #   - Typecheck, seeds, Test, Guard, Lint, Build: the PR's code and
+        #     configuration.
+        # (setup-node only reads the version from .nvmrc.) A PR can still edit
+        # this workflow itself: changes to .github/ need review.
         #
         # Bootstrap: while the base branch has no gate yet (the PR that adds
         # it, or a promotion PR to release/main before it gets there), the
         # PR's copy runs, with a warning.
         #
         # Replaces `yarn audit`, which used npm's legacy audit endpoint and
-        # reported 2 advisories where OSV and Dependabot report 84.
+        # saw only a small part of what OSV and the Dependabot alerts report
+        # for the same yarn.lock.
         run: |
           if [ "$(git rev-list --parents -n 1 HEAD | wc -w)" -ne 3 ]; then
             echo "::error title=advisory gate::HEAD is not a PR merge commit, so the base branch is unknown."
@@ -121,8 +134,20 @@ jobs:
         if: ${{ !cancelled() }}
         # Unit tests of this PR's copy of the gate (no network: git and OSV
         # are faked), so a change to the gate is tested before it becomes
-        # the base copy.
-        run: node --test scripts/advisory-gate.test.mjs
+        # the base copy. Fails if fewer than ADVISORY_GATE_MIN_TESTS pass or
+        # any test is skipped or todo (an emptied test file would pass
+        # `node --test`). Raise the number when you add tests.
+        env:
+          ADVISORY_GATE_MIN_TESTS: "32"
+        run: |
+          node --test --test-reporter=tap scripts/advisory-gate.test.mjs | tee "$RUNNER_TEMP/advisory-gate-tests.tap"
+          count() { sed -n "s/^# $1 \([0-9][0-9]*\)$/\1/p" "$RUNNER_TEMP/advisory-gate-tests.tap"; }
+          pass="$(count pass)"; skipped="$(count skipped)"; todo="$(count todo)"
+          echo "advisory gate tests: pass=${pass:-none} skipped=${skipped:-none} todo=${todo:-none} (minimum $ADVISORY_GATE_MIN_TESTS)"
+          if [ -z "$pass" ] || [ "$pass" -lt "$ADVISORY_GATE_MIN_TESTS" ] || [ "${skipped:-1}" -ne 0 ] || [ "${todo:-1}" -ne 0 ]; then
+            echo "::error title=advisory gate self-test::Expected at least $ADVISORY_GATE_MIN_TESTS passing tests and none skipped or todo; got pass=${pass:-none} skipped=${skipped:-none} todo=${todo:-none}."
+            exit 1
+          fi
 
       # The steps below run even if the advisory gate failed, so one run
       # shows every failure.

@@ -14,7 +14,8 @@
 //            does not accept.
 // Both modes fail on an invalid allowlist, on an expired entry (reviewBy in
 // the past) and on an entry whose reviewBy is further away than the severity
-// allows (MAX_REVIEW_DAYS).
+// allows (MAX_REVIEW_DAYS; for this limit the severity is the highest of
+// GitHub's label and the CVSS v3 score).
 //
 // Fails closed: exit 0 only if every lockfile entry was looked up. Any OSV
 // error (network, HTTP status, malformed or incomplete answer), unknown git
@@ -39,9 +40,20 @@
 // workspaces), "." for the root package.json, or "services/rust-api" for
 // Cargo.lock. Scope "prod" means reachable through dependencies or
 // optionalDependencies only; "dev" means only through a devDependencies edge.
-// A ratchet key is (ecosystem, package, advisory, path): adding a vulnerable
-// package to a new workspace is a new finding even if another workspace
-// already had it.
+// A ratchet key is (ecosystem, package, advisory, path) plus exposure:
+// adding a vulnerable package to a new workspace, or moving it from
+// devDependencies to dependencies, is a new finding even if the base already
+// had it elsewhere.
+//
+// Allowlist (security/advisory-allowlist.json, read from the head): entries
+// the change adds or edits are listed as warnings, because they take effect
+// in the same run and need a human reviewer. An entry that no longer matches
+// anything only gets a warning to remove it.
+//
+// Lockfile versions are tied to the artifact: strict SemVer, the yarn.lock
+// tarball file name must be <name>-<version>.tgz and every key must name the
+// resolved package; Cargo.lock entries must be SemVer from crates.io.
+// Anything else is exit 2.
 //
 // CI runs the copy of this file from the PR's base branch (see ci.yml), with
 // the lockfiles and the allowlist of the head, so a PR cannot weaken the gate
@@ -60,7 +72,8 @@
 // of each lockfile entry) and GET https://api.osv.dev/v1/vulns/<id>.
 //
 // Exit codes: 0 pass; 1 the policy failed (new or not-accepted advisory,
-// allowlist problem); 2 the check could not run (OSV, git, input).
+// allowlist problem); 2 the check could not run (OSV unreachable or wrong
+// answer, git, a lockfile entry that fails validation): NOT a clean result.
 
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, writeFileSync } from 'node:fs';
@@ -100,6 +113,22 @@ const SEVERITY_RANK = { info: 0, low: 1, medium: 2, unknown: 3, high: 4, critica
 const SEVERITY_ORDER = ['critical', 'high', 'unknown', 'medium', 'low', 'info'];
 
 export class GateError extends Error {}
+
+// Strict SemVer 2.0.0 (no "v", no spaces, no ranges).
+const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+// npm package names (lowercase, URL-safe; optional @scope/). Older registry
+// names with capitals are rejected too: fail closed, review by hand.
+const NPM_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
+const CRATE_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+// Package name in a yarn.lock key ("name@range", "@scope/name@range"), and
+// the real name behind an alias ("alias@npm:real@range").
+function keyPackageName(key) {
+  const at = key.indexOf('@', key.startsWith('@') ? 1 : 0);
+  if (at <= 0) throw new GateError(`yarn.lock: cannot read the package name in key ${JSON.stringify(key)}`);
+  const range = key.slice(at + 1);
+  return range.startsWith('npm:') ? keyPackageName(range.slice(4)) : key.slice(0, at);
+}
 
 // ------------------------------------------------------------------ lockfiles
 
@@ -152,7 +181,29 @@ export function parseYarnLock(text) {
     if (!NPM_REGISTRY_HOSTS.has(url.hostname) || marker <= 0) {
       throw new GateError(`yarn.lock: ${lines[0]} is not from the npm registry (${resolved}); OSV cannot check it`);
     }
-    const name = decodeURIComponent(url.pathname.slice(1, marker));
+    // The version OSV is asked about must be the version of the tarball yarn
+    // installs: a block whose `version` was edited while `resolved` and
+    // `integrity` still point at another tarball would be checked as
+    // something it is not. So: strict SemVer, valid name, tarball file name
+    // "<name without scope>-<version>.tgz", and every key names the same
+    // package (through `npm:` for aliases).
+    let name;
+    try {
+      name = decodeURIComponent(url.pathname.slice(1, marker));
+    } catch {
+      throw new GateError(`yarn.lock: ${lines[0]}: undecodable package name in ${resolved}`);
+    }
+    if (!NPM_NAME.test(name)) throw new GateError(`yarn.lock: ${lines[0]}: invalid npm package name ${JSON.stringify(name)} in resolved`);
+    if (!SEMVER.test(version)) throw new GateError(`yarn.lock: ${lines[0]}: version ${JSON.stringify(version)} is not a SemVer version`);
+    const tarball = url.pathname.slice(marker + 3);
+    const expected = `${name.split('/').pop()}-${version}.tgz`;
+    if (tarball !== expected) {
+      throw new GateError(`yarn.lock: ${lines[0]}: version "${version}" does not match the resolved tarball ${JSON.stringify(tarball)} (expected ${expected})`);
+    }
+    for (const key of keys) {
+      const keyName = keyPackageName(key);
+      if (keyName !== name) throw new GateError(`yarn.lock: key ${JSON.stringify(key)} names ${JSON.stringify(keyName)} but resolved is ${name}`);
+    }
     const id = `${name}@${version}`;
     const entry = byPackage.get(id) ?? { ecosystem: 'npm', name, version, deps: [] };
     entry.deps.push(...deps);
@@ -172,7 +223,9 @@ export function parseCargoLock(text) {
     const name = /^name = "([^"]+)"/m.exec(block)?.[1];
     const version = /^version = "([^"]+)"/m.exec(block)?.[1];
     const source = /^source = "([^"]+)"/m.exec(block)?.[1];
-    if (!name || !version) throw new GateError(`Cargo.lock: package without name or version: ${block.slice(0, 80)}`);
+    if (!name || !version) throw new GateError(`Cargo.lock: package without name or version: ${JSON.stringify(block.slice(0, 80))}`);
+    if (!CRATE_NAME.test(name)) throw new GateError(`Cargo.lock: invalid crate name ${JSON.stringify(name)}`);
+    if (!SEMVER.test(version)) throw new GateError(`Cargo.lock: ${name}: version ${JSON.stringify(version)} is not a SemVer version`);
     if (!source) continue;
     if (source !== CRATES_IO_INDEX) {
       throw new GateError(`Cargo.lock: ${name} ${version} is not from crates.io (${source}); OSV cannot check it`);
@@ -457,6 +510,30 @@ export function severityOf(vuln) {
 
 const maxSeverity = (a, b) => (SEVERITY_RANK[a] >= SEVERITY_RANK[b] ? a : b);
 
+// Severity used only for how far an allowlist reviewBy may be: the highest of
+// GitHub's label and every CVSS v3 score in the record (a "moderate" label
+// with a 9.8 vector counts as critical here). Does not change what blocks.
+export function deadlineSeverityOf(vuln) {
+  const found = [];
+  const label = String(vuln?.database_specific?.severity ?? '').toUpperCase();
+  const fromLabel = { CRITICAL: 'critical', HIGH: 'high', MODERATE: 'medium', MEDIUM: 'medium', LOW: 'low' }[label];
+  if (fromLabel) found.push(fromLabel);
+  const vectors = [
+    ...(vuln?.severity ?? []).filter((s) => s?.type === 'CVSS_V3').map((s) => s.score),
+    ...(vuln?.affected ?? []).map((a) => a?.database_specific?.cvss).filter((v) => typeof v === 'string'),
+  ];
+  for (const vector of vectors) {
+    const score = cvss3BaseScore(vector);
+    if (score !== null) found.push(scoreToSeverity(score));
+  }
+  if ((vuln?.affected ?? []).some((a) => a?.database_specific?.informational)) found.push('info');
+  return found.length ? found.reduce(maxSeverity) : 'unknown';
+}
+
+// Aliases as OSV lists them, keeping only well-formed ids (they end up in
+// logs and annotations).
+const aliasesOf = (vuln) => (Array.isArray(vuln?.aliases) ? vuln.aliases : []).filter((a) => typeof a === 'string' && VULN_ID.test(a));
+
 // ------------------------------------------------------------------ findings
 
 const pkgKey = (p) => `${p.ecosystem}|${p.name}@${p.version}`;
@@ -469,7 +546,7 @@ function groupAdvisories(ids, vulns) {
   const parent = new Map([...ids].map((id) => [id, id]));
   const find = (x) => (parent.get(x) === x ? x : find(parent.get(x)));
   for (const id of ids) {
-    for (const alias of vulns.get(id).aliases ?? []) {
+    for (const alias of aliasesOf(vulns.get(id))) {
       if (parent.has(alias)) parent.set(find(alias), find(id));
     }
   }
@@ -481,7 +558,7 @@ function groupAdvisories(ids, vulns) {
   }
   return [...groups.values()].map((members) => {
     const allIds = new Set(members);
-    for (const id of members) for (const alias of vulns.get(id).aliases ?? []) allIds.add(alias);
+    for (const id of members) for (const alias of aliasesOf(vulns.get(id))) allIds.add(alias);
     const sorted = [...allIds].sort();
     const key = sorted.find((x) => x.startsWith('GHSA-')) ?? members.slice().sort()[0];
     // GitHub's label wins when any record of the group has one (that is what
@@ -492,8 +569,10 @@ function groupAdvisories(ids, vulns) {
     const known = rated.filter((s) => s.severity !== 'unknown');
     const pool = labelled.length ? labelled : known.length ? known : rated;
     const best = pool.reduce((a, b) => (SEVERITY_RANK[b.severity] > SEVERITY_RANK[a.severity] ? b : a));
-    const summary = members.map((id) => vulns.get(id).summary).find(Boolean) ?? '';
-    return { key, osvIds: members.sort(), allIds: sorted, severity: best.severity, severitySource: `${best.source} (${best.id})`, summary };
+    const deadlines = members.map((id) => deadlineSeverityOf(vulns.get(id))).filter((x) => x !== 'unknown');
+    const deadlineSeverity = deadlines.length ? deadlines.reduce(maxSeverity) : 'unknown';
+    const summary = String(members.map((id) => vulns.get(id).summary).find((x) => typeof x === 'string' && x) ?? '');
+    return { key, osvIds: members.sort(), allIds: sorted, severity: best.severity, severitySource: `${best.source} (${best.id})`, deadlineSeverity, summary };
   });
 }
 
@@ -622,55 +701,109 @@ const entryCovers = (entry, row) =>
   entry.matchesVersion(row.version);
 
 // Expiry and deadline checks, after matching (the deadline depends on the
-// severity of what the entry covers).
+// severity of what the entry covers). An entry that matches nothing (the
+// package was upgraded, or the advisory moved) only gets a warning to remove
+// it: it accepts nothing, so its date does not matter.
 function checkDeadlines(entries, todayMs) {
   const errors = [];
   const warnings = [];
   for (const e of entries) {
     if (Number.isNaN(e.reviewByMs)) continue;
     const label = `${ALLOWLIST_PATH}: ${e.id} ${e.package} (${e.paths.join(', ')})`;
+    if (e.matched.length === 0) {
+      warnings.push(`${label} matches nothing in the lockfiles any more: remove it`);
+      continue;
+    }
     const daysLeft = Math.round((e.reviewByMs - todayMs) / DAY_MS);
     if (daysLeft < 0) {
       errors.push(`${label} expired on ${e.reviewBy}: fix the advisory, or review the decision and set a new reviewBy`);
       continue;
     }
-    const severity = e.matched.reduce((acc, row) => maxSeverity(acc, row.severity), e.matched.length ? 'info' : 'unknown');
+    const severity = e.matched.map((row) => row.deadlineSeverity).reduce(maxSeverity);
     const max = MAX_REVIEW_DAYS[severity];
     if (daysLeft > max) {
-      errors.push(`${label}: reviewBy ${e.reviewBy} is ${daysLeft} days away; a ${severity} advisory can be accepted for at most ${max} days`);
+      errors.push(`${label}: reviewBy ${e.reviewBy} is ${daysLeft} days away; a ${severity} advisory (highest of GitHub label and CVSS) can be accepted for at most ${max} days`);
     } else if (daysLeft <= WARN_DAYS) {
       warnings.push(`${label} expires on ${e.reviewBy} (${daysLeft} days)`);
     }
-    if (e.matched.length === 0) warnings.push(`${label} matches nothing in the lockfiles any more: remove it`);
   }
   return { errors, warnings };
+}
+
+// Allowlist entries of the head that are not, byte for byte (keys sorted),
+// in the base allowlist: added or changed by this change. They take effect
+// in the same run, so a human has to approve them; the gate points them out.
+export function changedAllowlistEntries(headText, baseText) {
+  const canonical = (e) => JSON.stringify(e, Object.keys(e ?? {}).sort());
+  const entriesOf = (text) => {
+    try {
+      const doc = JSON.parse(text ?? 'null');
+      return Array.isArray(doc?.entries) ? doc.entries.filter((e) => e && typeof e === 'object') : [];
+    } catch {
+      return [];
+    }
+  };
+  const before = new Set(entriesOf(baseText).map(canonical));
+  return entriesOf(headText).filter((e) => !before.has(canonical(e)));
 }
 
 // ------------------------------------------------------------------ evaluate
 
 // Pure policy decision, given the findings at the head (and at the base in
-// ratchet mode) and the allowlist text of the head.
-export function evaluate({ mode, headFindings, baseFindings, allowlistText, todayMs }) {
+// ratchet mode) and the allowlist text of the head (and of the base).
+//
+// Ratchet: a row is "existing" if the base had the same advisory for the same
+// package and workspace with the same exposure: prod in the head needs prod
+// in the base (moving a vulnerable package from devDependencies to
+// dependencies is new); dev in the head is covered by dev or prod in the base.
+export function evaluate({ mode, headFindings, baseFindings, allowlistText, baseAllowlistText = null, todayMs }) {
   const { entries, errors: allowlistErrors } = parseAllowlist(allowlistText);
   const rows = expand(headFindings);
-  const baseKeys = new Set(mode === 'ratchet' ? expand(baseFindings).map((r) => r.ratchetKey) : []);
+  const baseScopes = new Map();
+  if (mode === 'ratchet') {
+    for (const r of expand(baseFindings)) {
+      if (!baseScopes.has(r.ratchetKey)) baseScopes.set(r.ratchetKey, new Set());
+      baseScopes.get(r.ratchetKey).add(r.scope);
+    }
+  }
   for (const row of rows) {
     row.allowedBy = entries.find((e) => entryCovers(e, row)) ?? null;
     if (row.allowedBy) row.allowedBy.matched.push(row);
-    row.inBase = baseKeys.has(row.ratchetKey);
+    const scopes = baseScopes.get(row.ratchetKey);
+    row.inBase = Boolean(scopes && (scopes.has(row.scope) || (row.scope === 'dev' && scopes.has('prod'))));
     if (row.allowedBy) row.status = 'allowed';
     else if (mode === 'ratchet' && row.inBase) row.status = 'existing';
     else row.status = mode === 'ratchet' ? 'new' : 'not-accepted';
   }
   const deadlines = checkDeadlines(entries, todayMs);
+  const warnings = [...deadlines.warnings];
+  if (mode === 'ratchet') {
+    for (const e of changedAllowlistEntries(allowlistText, baseAllowlistText)) {
+      warnings.push(`${ALLOWLIST_PATH}: this change adds or edits the entry ${e.id} ${e.package} (${Array.isArray(e.paths) ? e.paths.join(', ') : e.paths}, reviewBy ${e.reviewBy}); it is already in effect in this run, so a reviewer must approve it`);
+    }
+  }
   const blocking = rows.filter((r) => r.status === 'new' || r.status === 'not-accepted');
   const errors = [...allowlistErrors, ...deadlines.errors];
-  return { rows, blocking, errors, warnings: deadlines.warnings, entries, pass: blocking.length === 0 && errors.length === 0 };
+  return { rows, blocking, errors, warnings, entries, pass: blocking.length === 0 && errors.length === 0 };
 }
 
 // ------------------------------------------------------------------ report
+//
+// Everything printed comes partly from the lockfiles, the allowlist (both
+// from the PR) and OSV. Names and versions are validated when parsed; on top
+// of that, every value is escaped for where it goes: workflow command data
+// (`::error::...`), plain log lines and the Markdown job summary. A newline
+// in a value could otherwise start a new workflow command (for example
+// `::stop-commands::`).
 
-const cell = (s) => String(s).replace(/\|/g, '\\|').replace(/\n/g, ' ');
+// Workflow command data: GitHub decodes %25, %0D, %0A back, so a value can
+// never end the command line.
+export const escapeData = (s) => String(s).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+export const annotation = (level, title, message) => `::${level} title=${title}::${escapeData(message)}`;
+// Plain log line: no line breaks.
+const oneLine = (s) => String(s).replace(/[\r\n\u2028\u2029]+/g, ' ');
+// Markdown table cell / list item: one line, no table or HTML breakout.
+export const md = (s) => oneLine(s).replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/`/g, "'");
 
 function sortRows(rows) {
   return rows.slice().sort(
@@ -693,35 +826,39 @@ function countBySeverity(rows) {
 function table(rows) {
   const lines = ['| severity | advisory | package | path (scope) | OSV ids | summary |', '|---|---|---|---|---|---|'];
   for (const r of sortRows(rows)) {
-    lines.push(`| ${r.severity} | ${r.key} | ${cell(`${r.package}@${r.version}`)} (${r.ecosystem}) | ${cell(r.path)} (${r.scope}) | ${r.osvIds.join(' ')} | ${cell(r.summary.slice(0, 100))} |`);
+    lines.push(`| ${md(r.severity)} | ${md(r.key)} | ${md(`${r.package}@${r.version}`)} (${md(r.ecosystem)}) | ${md(r.path)} (${md(r.scope)}) | ${md(r.osvIds.join(' '))} | ${md(r.summary.slice(0, 100))} |`);
   }
   return lines.join('\n');
 }
 
+const isSevere = (r) => r.severity === 'critical' || r.severity === 'high';
+
 export function renderSummary({ mode, head, base, result, withdrawn }) {
   const out = [];
-  const status = result.pass ? 'PASS' : 'FAIL';
-  out.push(`## Dependency advisories (OSV): ${status}`);
+  out.push(`## Dependency advisories (OSV): ${result.pass ? 'PASS' : 'FAIL (policy, exit 1)'}`);
   out.push('');
-  out.push(`Mode **${mode}**. Head \`${head.ref}\` (${head.sha.slice(0, 12)}): ${head.counts.npm} npm versions in yarn.lock, ${head.counts.cargo} crates in Cargo.lock.` + (base ? ` Base \`${base.ref}\` (${base.sha.slice(0, 12)}).` : ''));
+  out.push(`Mode **${md(mode)}**. Head ${md(head.ref)} (${md(head.sha.slice(0, 12))}): ${head.counts.npm} npm versions in yarn.lock, ${head.counts.cargo} crates in Cargo.lock.` + (base ? ` Base ${md(base.ref)} (${md(base.sha.slice(0, 12))}).` : ''));
   out.push('');
   const all = countBySeverity(result.rows);
   out.push(`Advisories at head: ${all.total} (${all.text}); allowlisted rows: ${result.rows.filter((r) => r.status === 'allowed').length}.`);
-  if (withdrawn.size) out.push(`Ignored (withdrawn in OSV): ${[...withdrawn].sort().join(', ')}.`);
+  if (withdrawn.size) out.push(`Ignored (withdrawn in OSV): ${md([...withdrawn].sort().join(', '))}.`);
   out.push('');
   if (result.errors.length) {
     out.push('### Allowlist problems (blocking)', '');
-    for (const e of result.errors) out.push(`- ${e}`);
+    for (const e of result.errors) out.push(`- ${md(e)}`);
     out.push('');
   }
   if (result.blocking.length) {
-    out.push(mode === 'ratchet' ? '### New advisories introduced by this change (blocking)' : '### Advisories not accepted by the allowlist (blocking)', '');
-    out.push(table(result.blocking), '');
-    out.push(`Fix: upgrade the package, or, if it does not affect this project, add an entry to \`${ALLOWLIST_PATH}\` with a VEX justification and a reviewBy date.`, '');
+    const title = mode === 'ratchet' ? 'New advisories introduced by this change' : 'Advisories not accepted by the allowlist';
+    const severe = result.blocking.filter(isSevere);
+    const rest = result.blocking.filter((r) => !isSevere(r));
+    if (severe.length) out.push(`### ${title}: critical and high (blocking)`, '', table(severe), '');
+    if (rest.length) out.push(`### ${title}: unknown, medium, low and info (blocking)`, '', table(rest), '');
+    out.push(`Fix: upgrade the package, or, if it does not affect this project, add an entry to ${md(ALLOWLIST_PATH)} with a VEX justification and a reviewBy date.`, '');
   }
   if (result.warnings.length) {
     out.push('### Warnings', '');
-    for (const w of result.warnings) out.push(`- ${w}`);
+    for (const w of result.warnings) out.push(`- ${md(w)}`);
     out.push('');
   }
   const allowed = result.rows.filter((r) => r.status === 'allowed');
@@ -737,8 +874,6 @@ export function renderSummary({ mode, head, base, result, withdrawn }) {
   }
   return out.join('\n');
 }
-
-const escapeData = (s) => String(s).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
 
 // ------------------------------------------------------------------ main
 
@@ -784,7 +919,14 @@ export async function run(opts, { git = makeGit(process.cwd()), fetchImpl = fetc
   const headResult = buildFindings(head.packages, idsByPackage, vulns);
   const baseResult = base ? buildFindings(base.packages, idsByPackage, vulns) : { findings: [] };
   const today = todayMs ?? Date.parse(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`);
-  const result = evaluate({ mode: opts.mode, headFindings: headResult.findings, baseFindings: baseResult.findings, allowlistText: head.allowlistText, todayMs: today });
+  const result = evaluate({
+    mode: opts.mode,
+    headFindings: headResult.findings,
+    baseFindings: baseResult.findings,
+    allowlistText: head.allowlistText,
+    baseAllowlistText: base?.allowlistText ?? null,
+    todayMs: today,
+  });
   return { head, base, result, withdrawn: headResult.withdrawn };
 }
 
@@ -795,24 +937,28 @@ async function main() {
     outcome = await run(opts);
   } catch (err) {
     const msg = err instanceof GateError ? err.message : `${err.name}: ${err.message}`;
-    console.log(`::error title=advisory gate::The advisory check could not run, so dependencies were NOT checked: ${escapeData(msg)}`);
+    console.log(annotation('error', 'advisory gate', `The advisory check could not run (OSV unreachable or bad input), so dependencies were NOT checked: ${msg}`));
     if (process.env.GITHUB_STEP_SUMMARY) {
-      appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Dependency advisories (OSV): ERROR\n\nThe check could not run, so dependencies were not checked:\n\n    ${msg}\n`);
+      appendFileSync(
+        process.env.GITHUB_STEP_SUMMARY,
+        `## Dependency advisories (OSV): ERROR (exit 2), not checked\n\nThe check could not run, so this is not a clean result:\n\n- ${md(msg)}\n`,
+      );
     }
+    console.log('Result: ERROR (exit 2): dependencies were not checked');
     process.exit(2);
   }
   const { head, base, result, withdrawn } = outcome;
   for (const r of sortRows(result.rows)) {
     const tag = { new: 'NEW', 'not-accepted': 'NOT ACCEPTED', existing: 'existing', allowed: 'allowed' }[r.status];
-    console.log(`${tag.padEnd(12)} ${r.severity.padEnd(8)} ${r.key.padEnd(20)} ${r.ecosystem}:${r.package}@${r.version}  ${r.path} (${r.scope})`);
+    console.log(oneLine(`${tag.padEnd(12)} ${r.severity.padEnd(8)} ${r.key.padEnd(20)} ${r.ecosystem}:${r.package}@${r.version}  ${r.path} (${r.scope})`));
   }
-  for (const e of result.errors) console.log(`::error title=advisory allowlist::${escapeData(e)}`);
-  for (const w of result.warnings) console.log(`::warning title=advisory allowlist::${escapeData(w)}`);
+  for (const e of result.errors) console.log(annotation('error', 'advisory allowlist', e));
+  for (const w of result.warnings) console.log(annotation('warning', 'advisory allowlist', w));
   if (result.blocking.length) {
     const c = countBySeverity(result.blocking);
     const noun = c.total === 1 ? 'advisory' : 'advisories';
     const what = opts.mode === 'ratchet' ? `new ${noun} introduced by this change` : `${noun} not accepted by the allowlist`;
-    console.log(`::error title=advisory gate::${c.total} ${what} (${c.text}). The table is in this step's log and in the job summary.`);
+    console.log(annotation('error', 'advisory gate', `${c.total} ${what} (${c.text}). The table is in this step's log and in the job summary.`));
   }
   const summary = renderSummary({ mode: opts.mode, head, base, result, withdrawn });
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
@@ -822,7 +968,7 @@ async function main() {
   }
   const c = countBySeverity(result.rows);
   console.log(`\nAdvisories at head: ${c.total} (${c.text}). Blocking: ${result.blocking.length} row(s), ${result.errors.length} allowlist problem(s).`);
-  console.log(`Result: ${result.pass ? 'PASS' : 'FAIL'}`);
+  console.log(`Result: ${result.pass ? 'PASS' : 'FAIL (policy, exit 1)'}`);
   process.exit(result.pass ? 0 : 1);
 }
 
@@ -831,7 +977,7 @@ async function main() {
 // nothing would be a pass.
 if (import.meta.main !== false) {
   main().catch((err) => {
-    console.log(`::error title=advisory gate::Unexpected failure, dependencies were NOT checked: ${escapeData(err.stack ?? err.message)}`);
+    console.log(annotation('error', 'advisory gate', `Unexpected failure, dependencies were NOT checked: ${err.stack ?? err.message}`));
     process.exit(2);
   });
 }

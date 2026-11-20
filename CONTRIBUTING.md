@@ -199,14 +199,19 @@ needs no token and installs nothing.
 
 - **PR CI** (`node-checks`, ratchet mode): fails if the PR adds an advisory
   that the base branch does not have, for the same package and workspace,
-  unless the allowlist accepts it. Any severity counts. The gate code comes
-  from the base branch, so a PR that edits the script is judged by the old
-  version.
+  unless the allowlist accepts it. Any severity counts. Moving a vulnerable
+  package from `devDependencies` to `dependencies` also counts as new. The
+  gate code comes from the base branch, so a PR that edits the script is
+  judged by the old version. Allowlist entries the PR adds or edits show up
+  as warnings: they already apply in that run, so the reviewer approves them.
 - **Weekly** (`.github/workflows/advisories.yml`, absolute mode on
   `develop`): fails on every advisory the allowlist does not accept, so the
   existing ones stay visible until they are fixed.
-- Both fail if OSV cannot be queried, or if an allowlist entry is invalid,
-  expired, or further away than its severity allows.
+- Both fail if an allowlist entry is invalid, expired, or further away than
+  its severity allows (exit 1), and fail closed (exit 2, nothing checked) if
+  OSV cannot be queried or a lockfile entry does not validate: `version`
+  must be SemVer and, in `yarn.lock`, match the `resolved` tarball name
+  (`<name>-<version>.tgz`), with every key naming the same package.
 
 Run it locally the way a reviewer should, with the `develop` copy of the
 script against the PR branch:
@@ -248,7 +253,10 @@ affect this project, in VEX terms, with a date to look at it again:
   `vulnerable_code_cannot_be_controlled_by_adversary`,
   `inline_mitigations_already_exist`.
 - `reviewBy`: at most 30 days ahead for critical, high or unknown severity,
-  90 days for the rest. The gate warns 14 days before and fails after it.
+  90 days for the rest; for this limit the severity is the highest of
+  GitHub's label and the CVSS v3 score. The gate warns 14 days before and
+  fails the day after. An entry that no longer matches anything (e.g. after
+  the upgrade) does not fail: it gets a warning to remove it.
 
 Severity comes from the OSV record: GitHub's label (`database_specific.severity`)
 when there is one, else the CVSS v3 base score, else `info` for RustSec

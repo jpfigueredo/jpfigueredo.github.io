@@ -6,8 +6,11 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   GateError,
+  annotation,
   cvss3BaseScore,
+  deadlineSeverityOf,
   evaluate,
+  md,
   parseAllowlist,
   parseCargoLock,
   parseYarnLock,
@@ -125,6 +128,37 @@ describe('parseYarnLock', () => {
     assert.deepEqual(lock.byKey.get('string-width@^4.1.0').deps, [{ name: 'strip-ansi', range: '^6.0.1' }]);
   });
 
+  it('ties version to the resolved tarball (fails closed on a forged version)', () => {
+    const real = yarnEntry(['lodash@^4.17.0'], 'lodash', '4.17.20');
+    assert.equal(parseYarnLock(yarnLock(real)).byPackage.size, 1);
+    const forged = real.replace('version "4.17.20"', 'version "4.17.21"'); // resolved/integrity still 4.17.20
+    assert.throws(() => parseYarnLock(yarnLock(forged)), (e) => e instanceof GateError && /does not match the resolved tarball "lodash-4.17.20.tgz"/.test(e.message));
+    const spaced = real.replace('version "4.17.20"', 'version "4.17.20 || 9.9.9"');
+    assert.throws(() => parseYarnLock(yarnLock(spaced)), /is not a SemVer version/);
+    const scoped = yarnEntry(['@babel/core@^7.0.0'], '@babel/core', '7.28.5');
+    assert.throws(() => parseYarnLock(yarnLock(scoped.replace('core-7.28.5.tgz', 'core-7.28.4.tgz'))), /expected core-7.28.5.tgz/);
+    const otherKey = yarnEntry(['left-pad@^1.0.0'], 'lodash', '4.17.20');
+    assert.throws(() => parseYarnLock(yarnLock(otherKey)), /names "left-pad" but resolved is lodash/);
+    const badAlias = yarnEntry(['x@npm:left-pad@^1.0.0'], 'lodash', '4.17.20');
+    assert.throws(() => parseYarnLock(yarnLock(badAlias)), /names "left-pad"/);
+  });
+
+  it('rejects a package name outside the npm grammar, and escapes it in output', () => {
+    const evil = 'evil%0A::stop-commands::tok';
+    const text = yarnLock(`"${evil}@^1.0.0":
+  version "1.0.0"
+  resolved "${REG}/${evil}/-/x-1.0.0.tgz#abc"
+  integrity sha512-x`);
+    let err;
+    assert.throws(() => parseYarnLock(text), (e) => { err = e; return e instanceof GateError && /invalid npm package name/.test(e.message); });
+    const line = annotation('error', 'advisory gate', err.message);
+    assert.equal(line.split('\n').length, 1);
+    assert.doesNotMatch(line, /\n::stop-commands::/);
+    const raw = annotation('warning', 't', 'a%0A::stop-commands::b\n::stop-commands::c\rd');
+    assert.equal(raw, '::warning title=t::a%250A::stop-commands::b%0A::stop-commands::c%0Dd');
+    assert.equal(md('a|b\n<img src=x>`c`'), "a\\|b &lt;img src=x&gt;'c'");
+  });
+
   it('rejects entries OSV cannot check, and an empty lockfile', () => {
     const git = 'foo@github:x/foo:\n  version "1.0.0"\n  resolved "https://codeload.github.com/x/foo/tar.gz/abc"\n';
     assert.throws(() => parseYarnLock(yarnLock(git)), /not from the npm registry/);
@@ -137,6 +171,8 @@ describe('parseCargoLock', () => {
     assert.deepEqual([...parseCargoLock(cargoLock(['zip', '0.6.6'])).keys()], ['zip@0.6.6']);
     const gitDep = `${cargoLock(['zip', '0.6.6'])}\n[[package]]\nname = "x"\nversion = "1.0.0"\nsource = "git+https://example.com/x#abc"\n`;
     assert.throws(() => parseCargoLock(gitDep), /not from crates.io/);
+    assert.throws(() => parseCargoLock(cargoLock(['zip', '0.6.6 '])), /is not a SemVer version/);
+    assert.throws(() => parseCargoLock(cargoLock(['zip', '>=0.6'])), /is not a SemVer version/);
   });
 });
 
@@ -182,6 +218,17 @@ describe('ratchet mode', () => {
     const { result } = await gate({ base, head }, 'ratchet', osv(OSV_LODASH, RECORDS));
     assert.equal(result.pass, false);
     assert.deepEqual(result.blocking.map((r) => [r.path, r.scope]), [['apps/newapp', 'dev']]);
+  });
+
+  it('fails when a vulnerable package moves from devDependencies to dependencies', async () => {
+    const asDev = snapshot({ lock: LODASH_OLD, web: {}, apps: { app: { lodash: '^4.17.0' } } });
+    const asProd = snapshot({ lock: LODASH_OLD, web: {}, apps: { app: {} } });
+    asProd['apps/app/package.json'] = JSON.stringify({ name: 'app', dependencies: { lodash: '^4.17.0' } });
+    const up = await gate({ base: asDev, head: asProd }, 'ratchet', osv(OSV_LODASH, RECORDS));
+    assert.equal(up.result.pass, false);
+    assert.deepEqual(up.result.blocking.map((r) => [r.path, r.scope]), [['apps/app', 'prod']]);
+    const down = await gate({ base: asProd, head: asDev }, 'ratchet', osv(OSV_LODASH, RECORDS));
+    assert.equal(down.result.pass, true);
   });
 
   it('follows transitive dependencies and sibling workspaces', async () => {
@@ -245,19 +292,49 @@ describe('absolute mode', () => {
 
 describe('allowlist', () => {
   const check = (entries, findings = []) => evaluate({ mode: 'absolute', headFindings: findings, baseFindings: [], allowlistText: JSON.stringify({ version: 1, entries }), todayMs: TODAY });
+  const withEntry = (entry, records = RECORDS) => gate({ head: snapshot({ lock: LODASH_OLD, allowlist: [entry] }) }, 'absolute', osv(OSV_LODASH, records));
 
-  it('fails on an expired entry', () => {
-    const r = check([allow({ reviewBy: '2026-11-18' })]);
-    assert.equal(r.pass, false);
-    assert.match(r.errors[0], /expired on 2026-11-18/);
+  it('fails on an expired entry that still matches', async () => {
+    const { result } = await withEntry(allow({ reviewBy: '2026-11-18' }));
+    assert.equal(result.pass, false);
+    assert.match(result.errors[0], /expired on 2026-11-18/);
+  });
+
+  it('accepts an entry on its reviewBy day, with a warning', async () => {
+    const { result } = await withEntry(allow({ reviewBy: '2026-11-19' }));
+    assert.equal(result.pass, true);
+    assert.deepEqual(result.errors, []);
+    assert.match(result.warnings.join('\n'), /expires on 2026-11-19 \(0 days\)/);
   });
 
   it('fails when reviewBy is too far for the severity', async () => {
     const records = { 'GHSA-aaaa-bbbb-cccc': ghsa('GHSA-aaaa-bbbb-cccc', 'HIGH') };
-    const head = snapshot({ lock: LODASH_OLD, allowlist: [allow({ reviewBy: '2027-01-01' })] });
-    const { result } = await gate({ head }, 'absolute', osv(OSV_LODASH, records));
+    const { result } = await withEntry(allow({ reviewBy: '2027-01-01' }), records);
     assert.equal(result.pass, false);
-    assert.match(result.errors[0], /a high advisory can be accepted for at most 30 days/);
+    assert.match(result.errors[0], /a high advisory \(highest of GitHub label and CVSS\) can be accepted for at most 30 days/);
+  });
+
+  it('uses the highest of GitHub label and CVSS for the deadline only', async () => {
+    const moderateButCritical = {
+      'GHSA-aaaa-bbbb-cccc': { ...ghsa('GHSA-aaaa-bbbb-cccc', 'MODERATE'), severity: [{ type: 'CVSS_V3', score: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H' }] },
+    };
+    assert.equal(deadlineSeverityOf(moderateButCritical['GHSA-aaaa-bbbb-cccc']), 'critical');
+    const sixtyDays = allow({ reviewBy: '2027-01-18' });
+    const strict = await withEntry(sixtyDays, moderateButCritical);
+    assert.equal(strict.result.pass, false);
+    assert.match(strict.result.errors[0], /a critical advisory/);
+    assert.equal(strict.result.rows[0].severity, 'medium'); // what is shown and compared stays GitHub's label
+    const plain = await withEntry(sixtyDays, RECORDS);
+    assert.equal(plain.result.pass, true);
+  });
+
+  it('only warns about an entry that matches nothing, whatever its reviewBy', () => {
+    for (const reviewBy of ['2027-12-31', '2026-01-01']) {
+      const r = check([allow({ reviewBy })]);
+      assert.equal(r.pass, true, reviewBy);
+      assert.deepEqual(r.errors, []);
+      assert.match(r.warnings.join('\n'), /matches nothing in the lockfiles any more: remove it/);
+    }
   });
 
   it('rejects malformed entries and unknown fields', () => {
@@ -267,15 +344,20 @@ describe('allowlist', () => {
     assert.equal(check([allow({ version: undefined, range: '^1.0.0' })]).pass, false);
     assert.equal(check([allow({ paths: [] })]).pass, false);
     assert.equal(check([allow({ reason: 'ok' })]).pass, false);
+    assert.equal(check([allow({ reviewBy: '2027-13-45' })]).pass, false);
     assert.equal(check([allow(), allow()]).pass, false);
     assert.equal(parseAllowlist('{').errors.length, 1);
     assert.equal(parseAllowlist('{"entries": []}').errors.length, 1);
   });
 
-  it('warns about entries that match nothing, without failing', () => {
-    const r = check([allow({ reviewBy: '2026-12-01' })]);
-    assert.equal(r.pass, true);
-    assert.match(r.warnings.join('\n'), /matches nothing/);
+  it('warns about entries the change adds or edits (ratchet)', async () => {
+    const base = snapshot({ lock: LODASH_OLD, allowlist: [allow({ reviewBy: '2026-12-01' })] });
+    const same = await gate({ base, head: base }, 'ratchet', osv(OSV_LODASH, RECORDS));
+    assert.equal(same.result.warnings.filter((w) => /adds or edits/.test(w)).length, 0);
+    const edited = snapshot({ lock: LODASH_OLD, allowlist: [allow({ reviewBy: '2027-01-01' })] });
+    const { result } = await gate({ base, head: edited }, 'ratchet', osv(OSV_LODASH, RECORDS));
+    assert.equal(result.pass, true);
+    assert.match(result.warnings.join('\n'), /adds or edits the entry GHSA-aaaa-bbbb-cccc lodash \(web, reviewBy 2027-01-01\)/);
   });
 });
 

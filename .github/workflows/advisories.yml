@@ -5,8 +5,9 @@
 # services/rust-api/Cargo.lock that security/advisory-allowlist.json does not
 # accept, and on allowlist entries that expired. It also catches advisories
 # published after the code was merged. The full table goes to the job
-# summary; a failed scheduled run notifies by GitHub's usual workflow
-# notifications. Red is expected until the existing advisories are fixed or
+# summary, critical and high first; a failed scheduled run notifies by
+# GitHub's usual workflow notifications. Exit 1 is the policy; exit 2 means
+# OSV could not be queried and nothing was checked. Red is expected until the existing advisories are fixed or
 # accepted.
 #
 # Security model: runs only the code already on develop, with a read-only
@@ -53,8 +54,21 @@ jobs:
           node-version-file: .nvmrc
 
       - name: Dependency advisories (absolute)
+        # Exit 1: policy (advisories not accepted, allowlist problem); the
+        # summary lists critical and high first. Exit 2: the check could not
+        # run (OSV unreachable or a bad answer, a lockfile entry that fails
+        # validation): NOT a clean result, re-run before reading anything
+        # into it.
         run: |
           git log -1 --format='develop: %H %s' HEAD
           node --version
           sha256sum scripts/advisory-gate.mjs
-          node scripts/advisory-gate.mjs --mode absolute --head HEAD
+          code=0
+          node scripts/advisory-gate.mjs --mode absolute --head HEAD || code=$?
+          case "$code" in
+            0) echo "Result: no advisories outside the allowlist." ;;
+            1) echo "::error title=weekly advisories::Policy failure (exit 1): advisories not accepted by the allowlist or allowlist problems. See the job summary (critical and high first)." ;;
+            2) echo "::error title=weekly advisories::The check could not run (exit 2): OSV unreachable or invalid input. Dependencies were NOT checked; re-run the workflow." ;;
+            *) echo "::error title=weekly advisories::Unexpected exit code $code from the advisory gate." ;;
+          esac
+          exit "$code"
