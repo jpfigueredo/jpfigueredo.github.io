@@ -26,7 +26,7 @@ const REG = 'https://registry.yarnpkg.com';
 function yarnEntry(keys, name, version, deps = {}) {
   const lines = [`${keys.map((k) => `"${k}"`).join(', ')}:`, `  version "${version}"`];
   const file = name.startsWith('@') ? name.split('/')[1] : name;
-  lines.push(`  resolved "${REG}/${name}/-/${file}-${version}.tgz#abc"`, '  integrity sha512-x');
+  lines.push(`  resolved "${REG}/${name}/-/${file}-${version}.tgz#0123456789abcdef0123456789abcdef01234567"`, '  integrity sha512-x');
   if (Object.keys(deps).length) {
     lines.push('  dependencies:');
     for (const [n, r] of Object.entries(deps)) lines.push(`    ${n} "${r}"`);
@@ -39,7 +39,7 @@ const yarnLock = (...entries) => `# yarn lockfile v1\n\n\n${entries.join('\n\n')
 const cargoLock = (...pkgs) =>
   `version = 4\n\n[[package]]\nname = "rust-api"\nversion = "0.1.0"\n` +
   pkgs
-    .map(([n, v]) => `\n[[package]]\nname = "${n}"\nversion = "${v}"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\nchecksum = "00"\n`)
+    .map(([n, v]) => `\n[[package]]\nname = "${n}"\nversion = "${v}"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\nchecksum = "${"0".repeat(64)}"\n`)
     .join('');
 
 const rootPkg = JSON.stringify({ name: 'root', private: true, workspaces: ['web', 'apps/*'] });
@@ -147,10 +147,11 @@ describe('parseYarnLock', () => {
     const evil = 'evil%0A::stop-commands::tok';
     const text = yarnLock(`"${evil}@^1.0.0":
   version "1.0.0"
-  resolved "${REG}/${evil}/-/x-1.0.0.tgz#abc"
+  resolved "${REG}/${evil}/-/x-1.0.0.tgz#0123456789abcdef0123456789abcdef01234567"
   integrity sha512-x`);
     let err;
-    assert.throws(() => parseYarnLock(text), (e) => { err = e; return e instanceof GateError && /invalid npm package name/.test(e.message); });
+    assert.throws(() => parseYarnLock(text), (e) => { err = e; return e instanceof GateError && /OSV cannot check it/.test(e.message); });
+    assert.match(err.message, /evil%0A::stop-commands::tok/);
     const line = annotation('error', 'advisory gate', err.message);
     assert.equal(line.split('\n').length, 1);
     assert.doesNotMatch(line, /\n::stop-commands::/);
@@ -160,10 +161,94 @@ describe('parseYarnLock', () => {
   });
 
   it('rejects entries OSV cannot check, and an empty lockfile', () => {
-    const git = 'foo@github:x/foo:\n  version "1.0.0"\n  resolved "https://codeload.github.com/x/foo/tar.gz/abc"\n';
-    assert.throws(() => parseYarnLock(yarnLock(git)), /not from the npm registry/);
+    const git = '"foo@github:x/foo":\n  version "1.0.0"\n  resolved "https://codeload.github.com/x/foo/tar.gz/abc"\n  integrity sha512-x\n';
+    assert.throws(() => parseYarnLock(yarnLock(git)), /OSV cannot check it/);
     assert.throws(() => parseYarnLock('# yarn lockfile v1\n'), /no entries/);
   });
+});
+
+describe('yarn.lock closed grammar (what yarn reads must be what the gate reads)', () => {
+  const R21 = `${REG}/lodash/-/lodash-4.17.21.tgz`;
+  const R20 = `${REG}/lodash/-/lodash-4.17.20.tgz`;
+  const entry = (...body) => yarnLock(['lodash@^4.17.0:', ...body].join('\n'));
+  const ok = ['  version "4.17.21"', `  resolved "${R21}"`, '  integrity sha512-aaa'];
+  const cases = {
+    'quoted duplicate "resolved" (yarn keeps the last one)': [entry(...ok, `  "resolved" "${R20}"`), /unexpected line/],
+    'quoted "version"': [entry(...ok, '  "version" "4.17.20"'), /unexpected line/],
+    'repeated unquoted field': [entry(...ok, `  resolved "${R20}"`), /repeated field "resolved"/],
+    'repeated version': [entry(...ok, '  version "4.17.20"'), /repeated field "version"/],
+    'unknown field': [entry(...ok, '  peerDependencies:'), /unexpected line/],
+    'wrong indentation (3 spaces)': [entry(...ok, '   integrity sha512-bbb'), /unexpected line/],
+    'tab indentation': [entry(...ok.slice(0, 2), '\tintegrity sha512-aaa'), /tab or carriage return/],
+    'CRLF line ending': [entry('  version "4.17.21"\r', `  resolved "${R21}"`, '  integrity sha512-aaa'), /tab or carriage return/],
+    'dependency outside a dependencies block': [entry(...ok, '    ms "^2.1.3"'), /dependency line outside/],
+    'repeated dependency': [entry(...ok, '  dependencies:', '    ms "^2.1.3"', '    ms "^2.0.0"'), /repeated dependency "ms"/],
+    'escape in a quoted value': [entry('  version "4.17.21"', `  resolved "${REG}/lod\\u0061sh/-/lodash-4.17.21.tgz"`, '  integrity sha512-aaa'), /unexpected line/],
+    'entry without blank line before it': [`${entry(...ok)}lodash@4.17.20:\n  version "4.17.20"\n  resolved "${R20}"\n  integrity sha512-bbb\n`, /not separated from the previous one/],
+    'comment after the first entry': [`${entry(...ok)}# note\n`, /comment after the first entry/],
+    'quoted key with a comma inside': [yarnLock(['"lodash@^4.17.0, other@^1":', ...ok].join('\n')), /not a yarn 1 entry header/],
+    'missing integrity': [entry(...ok.slice(0, 2)), /missing integrity/],
+    'http:': [entry('  version "4.17.21"', '  resolved "http://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz"', '  integrity sha512-aaa'), /is not https:\/\/registry/],
+    'file:': [entry('  version "4.17.21"', '  resolved "file://registry.yarnpkg.com/lodash/-/lodash-4.17.21.tgz"', '  integrity sha512-aaa'), /is not https:\/\/registry/],
+    'userinfo': [entry('  version "4.17.21"', '  resolved "https://evil.example@registry.npmjs.org/lodash/-/lodash-4.17.21.tgz"', '  integrity sha512-aaa'), /is not https:\/\/registry/],
+    'port': [entry('  version "4.17.21"', '  resolved "https://registry.npmjs.org:8080/lodash/-/lodash-4.17.21.tgz"', '  integrity sha512-aaa'), /is not https:\/\/registry/],
+    'query': [entry('  version "4.17.21"', `  resolved "${R21}?x=lodash-4.17.20.tgz"`, '  integrity sha512-aaa'), /is not https:\/\/registry/],
+    'other fragment': [entry('  version "4.17.21"', `  resolved "${R21}#main"`, '  integrity sha512-aaa'), /is not https:\/\/registry/],
+    'percent-encoded dot segments': [entry('  version "4.17.21"', `  resolved "${REG}/evil/-/x/%2e%2e/%2e%2e/lodash/-/lodash-4.17.21.tgz"`, '  integrity sha512-aaa'), /is not https:\/\/registry/],
+    'dot segments': [entry('  version "4.17.21"', `  resolved "${REG}/evil/-/x/../../lodash/-/lodash-4.17.21.tgz"`, '  integrity sha512-aaa'), /is not a plain registry URL/],
+    'name outside the npm grammar (capitals)': [entry('  version "1.0.0"', `  resolved "${REG}/Lodash/-/Lodash-1.0.0.tgz"`, '  integrity sha512-aaa'), /invalid npm package name "Lodash"/],
+    'percent-encoded scope': [yarnLock(['"@types/node@^20":', '  version "20.1.0"', `  resolved "${REG}/%40types%2fnode/-/node-20.1.0.tgz"`, '  integrity sha512-aaa'].join('\n')), /is not https:\/\/registry/],
+  };
+  for (const [name, [text, reason]] of Object.entries(cases)) {
+    it(`rejects: ${name}`, () => {
+      assert.throws(() => parseYarnLock(text), (e) => e instanceof GateError && /^yarn\.lock/.test(e.message) && reason.test(e.message));
+    });
+  }
+
+  it('accepts what yarn writes: header comments, quoted and unquoted keys, aliases, both dependency blocks', () => {
+    const text = [
+      '# THIS IS AN AUTOGENERATED FILE. DO NOT EDIT THIS FILE DIRECTLY.',
+      '# yarn lockfile v1',
+      '',
+      '',
+      '"@babel/core@^7.0.0", "@babel/core@^7.1.0":',
+      '  version "7.28.5"',
+      `  resolved "${REG}/@babel/core/-/core-7.28.5.tgz#0123456789abcdef0123456789abcdef01234567"`,
+      '  integrity sha512-AbC+/9==',
+      '  dependencies:',
+      '    "@babel/types" "^7.28.5"',
+      '    ms "^2.1.3"',
+      '  optionalDependencies:',
+      '    fsevents "~2.3.2"',
+      '',
+      '"string-width-cjs@npm:string-width@^4.2.0", string-width@^4.1.0:',
+      '  version "4.2.3"',
+      '  resolved "https://registry.npmjs.org/string-width/-/string-width-4.2.3.tgz"',
+      '  integrity sha512-x',
+      '',
+    ].join('\n');
+    const lock = parseYarnLock(text);
+    assert.deepEqual([...lock.byPackage.keys()], ['@babel/core@7.28.5', 'string-width@4.2.3']);
+    assert.equal(lock.byKey.get('@babel/core@^7.1.0').deps.length, 3);
+  });
+});
+
+describe('Cargo.lock closed grammar', () => {
+  const base = cargoLock(['zip', '0.6.6']);
+  const cases = {
+    'repeated version': base.replace('version = "0.6.6"', 'version = "0.6.6"\nversion = "0.7.0"'),
+    'unknown key': base.replace('version = "0.6.6"', 'version = "0.6.6"\nreplace = "zip 0.7.0"'),
+    'single-quoted value': base.replace('version = "0.6.6"', "version = '0.6.6'"),
+    'escape in a value': base.replace('name = "zip"', 'name = "zi\\u0070"'),
+    'extra table': `${base}\n[metadata]\n"x" = "y"\n`,
+    'missing checksum': base.replace(/checksum = "[0-9a-f]+"\n/, ''),
+    'bad dependency line': base.replace('checksum', 'dependencies = [\n "a" ,\n]\nchecksum'),
+  };
+  for (const [name, text] of Object.entries(cases)) {
+    it(`rejects: ${name}`, () => {
+      assert.throws(() => parseCargoLock(text), (e) => e instanceof GateError && /^Cargo\.lock/.test(e.message));
+    });
+  }
 });
 
 describe('parseCargoLock', () => {

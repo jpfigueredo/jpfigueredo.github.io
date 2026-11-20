@@ -209,9 +209,14 @@ needs no token and installs nothing.
   existing ones stay visible until they are fixed.
 - Both fail if an allowlist entry is invalid, expired, or further away than
   its severity allows (exit 1), and fail closed (exit 2, nothing checked) if
-  OSV cannot be queried or a lockfile entry does not validate: `version`
-  must be SemVer and, in `yarn.lock`, match the `resolved` tarball name
-  (`<name>-<version>.tgz`), with every key naming the same package.
+  OSV cannot be queried or a lockfile does not validate. The lockfiles are
+  read with a closed grammar: only the lines yarn 1 and Cargo write (known
+  field names, unquoted, once each, exact indentation; `resolved` a plain
+  `https://` registry URL), so the gate cannot read a different version than
+  the one yarn or Cargo installs. `version` must be SemVer and, in
+  `yarn.lock`, match the `resolved` tarball name (`<name>-<version>.tgz`),
+  with every key naming the same package. A hand-edited lockfile that yarn
+  would still accept can fail here: regenerate it with `yarn install`.
 
 Run it locally the way a reviewer should, with the `develop` copy of the
 script against the PR branch:

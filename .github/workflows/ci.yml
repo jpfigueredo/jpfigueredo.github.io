@@ -138,7 +138,7 @@ jobs:
         # any test is skipped or todo (an emptied test file would pass
         # `node --test`). Raise the number when you add tests.
         env:
-          ADVISORY_GATE_MIN_TESTS: "32"
+          ADVISORY_GATE_MIN_TESTS: "65"
         run: |
           node --test --test-reporter=tap scripts/advisory-gate.test.mjs | tee "$RUNNER_TEMP/advisory-gate-tests.tap"
           count() { sed -n "s/^# $1 \([0-9][0-9]*\)$/\1/p" "$RUNNER_TEMP/advisory-gate-tests.tap"; }
