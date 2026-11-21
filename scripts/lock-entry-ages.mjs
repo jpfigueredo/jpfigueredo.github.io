@@ -45,7 +45,9 @@
 // lookup must still succeed. Any invalid or expired entry fails the gate,
 // whether or not this change uses it. Entries the change adds or edits are
 // listed as warnings, because they take effect in the same run and need a
-// human reviewer.
+// human reviewer. The file must not be deleted, even when empty: its presence
+// in the base branch is what makes CI run the base's copy of this gate, so a
+// change that deletes it (the base has it, the head does not) fails (exit 1).
 //
 // Fails closed: exit 0 only if every new entry was looked up and is old
 // enough or accepted. Network errors (after a short retry), HTTP errors, a
@@ -75,9 +77,12 @@
 // (crates.io) per run.
 //
 // Exit codes: 0 pass; 1 the policy failed (an entry younger than the minimum
-// age and not accepted, an invalid or expired exception); 2 the check could
-// not run (registry lookup, git, a lockfile outside the grammar): NOT a clean
-// result.
+// age and not accepted, an invalid or expired exception, the exceptions file
+// deleted); 2 the check could not run (registry lookup, git, a lockfile
+// outside the grammar): NOT a clean result. A pass prints exactly one
+// "Result: PASS" line, as its last line. CI counts a run as a pass only with
+// exit 0 AND that line, so an exit 0 that skipped the check (e.g. the CLI did
+// not start) is not a pass.
 
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, realpathSync } from 'node:fs';
@@ -320,6 +325,13 @@ export async function run(opts, { git = makeGit(process.cwd()), fetchImpl = fetc
   const headExceptions = git.read(head, EXCEPTIONS_PATH);
   const baseExceptions = git.read(base, EXCEPTIONS_PATH);
   const { entries: exceptions, errors } = parseExceptions(headExceptions, utcDay(nowMs));
+  // The file in the base branch is what makes CI run the base's copy of this
+  // gate (ci.yml). Deleting it would let the next PR run its own copy.
+  if (headExceptions === null && baseExceptions !== null) {
+    errors.push(
+      `${EXCEPTIONS_PATH} is in the base but not in the head: this change deletes it. Its presence in the base branch is what makes CI run the base's copy of this gate, so it must stay, even when empty. Restore the file.`,
+    );
+  }
   const warnings = changedAllowlistEntries(headExceptions, baseExceptions).map(
     (e) => `${EXCEPTIONS_PATH}: this change adds or edits the exception ${e.ecosystem} ${e.package}@${e.version} (${e.ghsa}, reviewBy ${e.reviewBy}); it is already in effect in this run, so a reviewer must approve it`,
   );
@@ -450,8 +462,9 @@ async function main() {
 // Runs only as a CLI: when this file is the script node was started with
 // (`node <path>/lock-entry-ages.mjs`, how CI and the runbook run it), never on
 // import. Does not depend on import.meta.main, which Node versions before
-// 22.18/24.2 do not set. Run it by path, not from stdin.
-function invokedAsCli(moduleUrl, argv1 = process.argv[1]) {
+// 22.18/24.2 do not set. Run it by path, not from stdin (there argv[1] is
+// unset, nothing runs and the exit is 0). Exported for the tests.
+export function invokedAsCli(moduleUrl, argv1 = process.argv[1]) {
   if (!argv1) return false;
   try {
     return realpathSync(argv1) === realpathSync(fileURLToPath(moduleUrl));

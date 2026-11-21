@@ -5,13 +5,13 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { GateError } from './lib/lockfile-grammar.mjs';
-import { EXCEPTIONS_PATH, MAX_EXCEPTION_DAYS, MIN_AGE_MS, USER_AGENT, parseExceptions, run } from './lock-entry-ages.mjs';
+import { EXCEPTIONS_PATH, MAX_EXCEPTION_DAYS, MIN_AGE_MS, USER_AGENT, invokedAsCli, parseExceptions, run } from './lock-entry-ages.mjs';
 
 const SCRIPTS = dirname(fileURLToPath(import.meta.url));
 
@@ -402,6 +402,23 @@ describe('exceptions (security/lock-age-allowlist.json)', () => {
     assert.deepEqual(out.errors, []);
     assert.equal(out.exitCode, 1);
   });
+
+  // The file in the base is what makes CI run the base's copy of this gate.
+  it('deleting the file fails the gate (exit 1), even with nothing new to check', async () => {
+    for (const baseEntries of [[], [exception()]]) {
+      const out = await gate({ base: snapshot({ exceptions: baseEntries }), head: snapshot() }, registry());
+      assert.equal(out.exitCode, 1);
+      assert.deepEqual(out.rows, []);
+      assert.equal(out.errors.length, 1);
+      assert.match(out.errors[0], /^security\/lock-age-allowlist\.json is in the base but not in the head: this change deletes it\. .*Restore the file/);
+    }
+  });
+
+  it('a file the base does not have either is not a deletion', async () => {
+    const out = await gate({ base: snapshot(), head: snapshot() }, registry());
+    assert.equal(out.exitCode, 0);
+    assert.deepEqual(out.errors, []);
+  });
 });
 
 // ---------------------------------------------------------------- git
@@ -507,6 +524,63 @@ describe('CLI (child process)', () => {
     }
   });
 
+  it('deleting security/lock-age-allowlist.json prints the error and "Result: FAIL (policy, exit 1)"', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lock-age-marker-'));
+    try {
+      git(dir, 'init', '-q');
+      mkdirSync(join(dir, 'services/rust-api'), { recursive: true });
+      mkdirSync(join(dir, 'security'));
+      writeFileSync(join(dir, 'yarn.lock'), yarnLock(LODASH_20));
+      writeFileSync(join(dir, 'services/rust-api/Cargo.lock'), cargoLock(['serde', '1.0.0']));
+      writeFileSync(join(dir, EXCEPTIONS_PATH), JSON.stringify({ version: 1, entries: [] }));
+      git(dir, 'add', '-A');
+      git(dir, 'commit', '-q', '-m', 'base');
+      git(dir, 'tag', 'base');
+      git(dir, 'rm', '-q', EXCEPTIONS_PATH);
+      git(dir, 'commit', '-q', '-m', 'head');
+      const res = spawnSync(process.execPath, [join(SCRIPTS, 'lock-entry-ages.mjs'), '--base', 'base', '--head', 'HEAD'], { cwd: dir, encoding: 'utf8', env: { ...process.env, GITHUB_STEP_SUMMARY: '' } });
+      assert.equal(res.status, 1, res.stdout + res.stderr);
+      assert.match(res.stdout, /^::error title=lock age exceptions::security\/lock-age-allowlist\.json is in the base but not in the head/m);
+      assert.deepEqual(res.stdout.match(/^Result:.*$/gm), ['Result: FAIL (policy, exit 1)']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('invokedAsCli: true only when argv[1] is this file (also through a symlink)', () => {
+    const gatePath = join(SCRIPTS, 'lock-entry-ages.mjs');
+    const url = pathToFileURL(gatePath).href;
+    const dir = mkdtempSync(join(tmpdir(), 'lock-age-guard-'));
+    try {
+      const link = join(dir, 'gate.mjs');
+      symlinkSync(gatePath, link);
+      const other = join(dir, 'other.mjs');
+      writeFileSync(other, '');
+      assert.equal(invokedAsCli(url, gatePath), true);
+      assert.equal(invokedAsCli(url, link), true);
+      assert.equal(invokedAsCli(url, other), false);
+      assert.equal(invokedAsCli(url, join(SCRIPTS, 'advisory-gate.mjs')), false);
+      assert.equal(invokedAsCli(url, join(dir, 'missing.mjs')), false);
+      assert.equal(invokedAsCli(url, ''), false);
+      // No script path (node -e, or the source on stdin): argv[1] is unset,
+      // nothing runs and the exit is 0, hence the "Result: PASS" rule in CI.
+      const noPath = spawnSync(process.execPath, ['--input-type=module', '-e', `const m = await import(${JSON.stringify(url)}); console.log(m.invokedAsCli(${JSON.stringify(url)}));`], { encoding: 'utf8' });
+      assert.equal(noPath.status, 0, noPath.stderr);
+      assert.equal(noPath.stdout, 'false\n');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('gate sources: no import.meta other than .url; imports only node: and ./lib/ (lib: node: and its siblings)', () => {
+    assert.deepEqual(gateSourceProblems(readFileSync(join(SCRIPTS, 'lock-entry-ages.mjs'), 'utf8'), /^(?:node:[a-z_/]+|\.\/lib\/[a-z-]+\.mjs)$/), []);
+    const libs = readdirSync(join(SCRIPTS, 'lib')).filter((f) => f.endsWith('.mjs'));
+    assert.ok(libs.length >= 2, libs.join());
+    for (const f of libs) {
+      assert.deepEqual(gateSourceProblems(readFileSync(join(SCRIPTS, 'lib', f), 'utf8'), /^(?:node:[a-z_/]+|\.\/[a-z-]+\.mjs)$/, { cli: false }), [], f);
+    }
+  });
+
   it('importing either gate runs no CLI; running either by path does', () => {
     const dir = mkdtempSync(join(tmpdir(), 'lock-age-import-'));
     try {
@@ -526,3 +600,33 @@ describe('CLI (child process)', () => {
     }
   });
 });
+
+// Static checks of a gate's source (comment lines dropped): CI copies the
+// gate and scripts/lib/ from the base branch and nothing else, and the CLI
+// must start only through invokedAsCli(import.meta.url), never through
+// import.meta.main (unset before Node 22.18/24.2, so a guard on it ran the CLI
+// on import). Same checks as in advisory-gate.test.mjs. Returns a list of
+// problems.
+function gateSourceProblems(source, allowedSpecifier, { cli = true } = {}) {
+  const code = source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !/^\s*\/\//.test(line))
+    .join('\n');
+  const problems = [];
+  for (const m of code.matchAll(/\bimport\s*\.\s*meta\b(?!\s*\.\s*url\b)/g)) problems.push(`uses ${m[0]} other than import.meta.url`);
+  for (const m of code.matchAll(/\bimport\s*\(|\brequire\s*\(|\bcreateRequire\b|\bprocess\.binding\b/g)) problems.push(`dynamic import or require: ${m[0]}`);
+  for (const m of code.matchAll(/^\s*(?:import|export)\b[^;]*?\bfrom\s*(['"])([^'"]*)\1|^\s*import\s*(['"])([^'"]*)\3/gm)) {
+    const specifier = m[2] ?? m[4];
+    if (!allowedSpecifier.test(specifier)) problems.push(`imports ${specifier}`);
+  }
+  const guards = code.match(/^if \(invokedAsCli\(import\.meta\.url\)\) \{$/gm) ?? [];
+  const calls = code.match(/(?<!function )\bmain\(\)/g) ?? [];
+  if (cli) {
+    if (guards.length !== 1) problems.push(`expected one "if (invokedAsCli(import.meta.url)) {" line, found ${guards.length}`);
+    if (calls.length !== 1) problems.push(`expected main() to be called once (inside the guard), found ${calls.length}`);
+  } else if (guards.length || calls.length || /\bprocess\.exit\b/.test(code)) {
+    problems.push('a lib module must not have a CLI entry point');
+  }
+  return problems;
+}

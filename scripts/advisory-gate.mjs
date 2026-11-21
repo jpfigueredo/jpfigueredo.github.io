@@ -77,6 +77,9 @@
 // Exit codes: 0 pass; 1 the policy failed (new or not-accepted advisory,
 // allowlist problem); 2 the check could not run (OSV unreachable or wrong
 // answer, git, a lockfile entry that fails validation): NOT a clean result.
+// A pass prints exactly one "Result: PASS" line, as its last line. CI counts
+// a run as a pass only with exit 0 AND that line, so an exit 0 that skipped
+// the check (e.g. the CLI did not start) is not a pass.
 
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -848,8 +851,9 @@ async function main() {
 // (`node <path>/advisory-gate.mjs`, how CI and the runbook run it), never on
 // import. Does not depend on import.meta.main, which Node versions before
 // 22.18/24.2 do not set: there, a guard on it would also run this main() when
-// another script imports this file. Run it by path, not from stdin.
-function invokedAsCli(moduleUrl, argv1 = process.argv[1]) {
+// another script imports this file. Run it by path, not from stdin (there
+// argv[1] is unset, nothing runs and the exit is 0). Exported for the tests.
+export function invokedAsCli(moduleUrl, argv1 = process.argv[1]) {
   if (!argv1) return false;
   try {
     return realpathSync(argv1) === realpathSync(fileURLToPath(moduleUrl));
