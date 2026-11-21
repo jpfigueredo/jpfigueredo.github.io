@@ -51,7 +51,7 @@ jpfigueredo.github.io/
   - Constellation-like visualizations
   - Primary source citations
   - Interactive knowledge mapping
-- **Live Demo:** [SW Timeline](https://jpfigueredo.github.io/projects/sw-timeline)
+- **Live Demo:** [Ohara](https://jpfigueredo.github.io/projects/ohara)
 
 ## 🛠️ Tech Stack
 

@@ -1,13 +1,10 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createBrowserRouter, RouterProvider, Link, useLocation } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Link, Navigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { PageContainer, NeonText } from '@jpfig/ui';
-import { apps as configApps, version as configVersion } from '@jpfig/config';
+import { apps as configApps } from '@jpfig/config';
 import { StarfieldSVG } from './components/StarfieldSVG';
-import { ConstellationTimeline } from './components/timeline/ConstellationTimeline';
-import { SearchBar } from './components/timeline/SearchBar';
-import type { SearchMode } from './components/timeline/SearchBar';
 import { LanguageSelector } from './components/LanguageSelector';
 import './index.css';
 import './i18n/config';
@@ -74,7 +71,7 @@ const SidebarMenu: React.FC<{ isCollapsed: boolean; isMobileOpen: boolean; onTog
   
   const navItems = [
     { path: '/', label: t('nav.home'), icon: '🏠' },
-    { path: '/projects/sw-timeline', label: t('nav.swTimeline'), icon: '🌳' },
+    { path: '/projects/ohara', label: t('nav.ohara'), icon: '🌳' },
     { path: '/projects/kafka-viz', label: t('nav.kafkaViz'), icon: '📡' },
   ];
 
@@ -266,7 +263,7 @@ const Footer: React.FC = () => {
 
 // Enhanced Homepage Component
 const PROJECTS = [
-  { key: 'swTimeline', to: '/projects/sw-timeline', accent: '#2563EB', icon: '🌳', stack: ['React', 'TypeScript', 'DAG', 'Vitest'], src: configApps.ohara.iframeSrcProd },
+  { key: 'ohara', to: '/projects/ohara', accent: '#2563EB', icon: '🌳', stack: ['React', 'TypeScript', 'DAG', 'Vitest'], src: configApps.ohara.iframeSrcProd },
   { key: 'kafkaViz', to: '/projects/kafka-viz', accent: '#F97316', icon: '📡', stack: ['React', 'TypeScript', 'Canvas'], src: configApps.kafkaViz.iframeSrcProd },
 ] as const;
 
@@ -541,9 +538,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   );
 };
 
-const SwTimeline = () => {
-  const [q, setQ] = React.useState('');
-  const [mode, setMode] = React.useState<SearchMode>('highlight');
+const OharaPage = () => {
   const { t } = useTranslation();
 
   return (
@@ -551,24 +546,17 @@ const SwTimeline = () => {
       <div className="p-4 sm:p-6">
         <div className="mb-4 sm:mb-6">
           <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">
-            <span className="text-neon">{t('swTimeline.title')}</span>
+            <span className="text-neon">{t('ohara.title')}</span>
           </h1>
           <p className="text-slate-400 text-sm sm:text-base">
-            {t('swTimeline.description')}
+            {t('ohara.description')}
           </p>
         </div>
 
-        {/* App Ohara — trilhas de leitura sobre fontes primárias */}
-        <div className="mt-4">
-          <h2 className="text-lg sm:text-xl font-semibold text-white mb-3">
-            Ohara
-            <span className="ml-2 text-xs align-middle text-slate-400">{configVersion}</span>
-          </h2>
-          <IframeViewport
-            src={configApps.ohara.iframeSrcProd}
-            title="Ohara – Trilhas de Leitura"
-          />
-        </div>
+        <IframeViewport
+          src={configApps.ohara.iframeSrcProd}
+          title="Ohara – Trilhas de Leitura"
+        />
       </div>
     </MainLayout>
   );
@@ -604,7 +592,9 @@ const Docs = () => (
 
 const router = createBrowserRouter([
   { path: '/', element: <Home /> },
-  { path: '/projects/sw-timeline', element: <SwTimeline /> },
+  { path: '/projects/ohara', element: <OharaPage /> },
+  // Endereço antigo da página do Ohara: mantém os links existentes funcionando.
+  { path: '/projects/sw-timeline', element: <Navigate to="/projects/ohara" replace /> },
   { path: '/projects/kafka-viz', element: <KafkaVizPage /> },
   { path: '/docs', element: <Docs /> }
 ]);
