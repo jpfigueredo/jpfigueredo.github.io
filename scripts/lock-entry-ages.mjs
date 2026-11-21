@@ -25,10 +25,12 @@
 // millisecond: exactly 7 days old passes, 7 days minus 1 ms fails. A publish
 // time in the future is "too young".
 //
-// Lockfiles are read with the closed grammar of scripts/advisory-gate.mjs
-// (parseYarnLock, parseCargoLock), imported, not copied, so the two gates
-// cannot read the same lockfile differently. Any line outside that grammar is
-// exit 2. That grammar only accepts registry sources: a yarn.lock `resolved`
+// Lockfiles are read with the closed grammar shared with the advisory gate
+// (scripts/lib/lockfile-grammar.mjs: parseYarnLock, parseCargoLock), imported,
+// not copied, so the two gates cannot read the same lockfile differently. Any
+// line outside that grammar is exit 2. A lockfile missing in the base counts
+// as empty (every entry of the head is new, e.g. a promotion PR into a branch
+// that predates Cargo.lock); missing in the head is exit 2. That grammar only accepts registry sources: a yarn.lock `resolved`
 // outside https://registry.npmjs.org or registry.yarnpkg.com (git, tarball
 // URL, file:, another registry) and a Cargo.lock `source` other than crates.io
 // fail both gates, with no exception possible, because there is no registry
@@ -38,7 +40,8 @@
 // Exceptions (security/lock-age-allowlist.json, read from the head, like the
 // advisory allowlist): exact ecosystem + package + version, a reason, the
 // GHSA the young version is needed for, and reviewBy (at most
-// MAX_EXCEPTION_DAYS ahead). An exception accepts the age only: the registry
+// MAX_EXCEPTION_DAYS ahead). Package names and versions must be exact (npm or
+// crate name grammar, SemVer): no ranges or wildcards. An exception accepts the age only: the registry
 // lookup must still succeed. Any invalid or expired entry fails the gate,
 // whether or not this change uses it. Entries the change adds or edits are
 // listed as warnings, because they take effect in the same run and need a
@@ -49,23 +52,26 @@
 // missing package or version, an answer about a different package, or a
 // publish time that is not an ISO 8601 date are exit 2.
 //
-// CI runs this file and scripts/advisory-gate.mjs from the PR's base branch
-// (see ci.yml), with the lockfiles and the exceptions of the head, so a PR
-// cannot weaken the gate that judges it. The minimum age is a constant here,
-// not a command-line option, for the same reason. Every file is read with
-// `git show <ref>:<path>`, never from the working tree.
+// CI runs this file and the scripts/lib/ modules it imports from the PR's base
+// branch (see ci.yml), with the lockfiles and the exceptions of the head, so a
+// PR cannot weaken the gate that judges it. The minimum age is a constant
+// here, not a command-line option, for the same reason. It does not import
+// advisory-gate.mjs: importing a script that has a CLI entry point could run
+// that CLI. Every file is read with `git show <ref>:<path>`, never from the
+// working tree.
 //
 // Usage (from anywhere inside the repo):
 //   node scripts/lock-entry-ages.mjs                      # origin/develop vs HEAD
 //   node scripts/lock-entry-ages.mjs --base <ref> --head <ref>
-// To review a PR, run the develop copy of both files, not the PR's (see
-// CONTRIBUTING.md, "Dependency updates (Dependabot)").
+// To review a PR, run develop's copy of this file and of scripts/lib/, not the
+// PR's (see CONTRIBUTING.md, "Dependency updates (Dependabot)").
 // Writes a Markdown report to $GITHUB_STEP_SUMMARY when it is set.
 //
 // Network: read-only GETs to registry.npmjs.org and crates.io, with a generic
 // User-Agent naming this repository (crates.io rejects requests without one),
-// at most one crates.io request per second (its crawler policy), a timeout and
-// up to 3 attempts per request, one request per package (npm) or version
+// at most one crates.io request per second (its crawler policy), a timeout,
+// no redirects followed (a redirect is an error) and up to 3 attempts per
+// request, one request per package (npm) or version
 // (crates.io) per run.
 //
 // Exit codes: 0 pass; 1 the policy failed (an entry younger than the minimum
@@ -74,8 +80,10 @@
 // result.
 
 import { execFileSync } from 'node:child_process';
-import { appendFileSync } from 'node:fs';
-import { GateError, annotation, changedAllowlistEntries, md, parseCargoLock, parseYarnLock } from './advisory-gate.mjs';
+import { appendFileSync, realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { CRATE_NAME, GateError, NPM_NAME, SEMVER, parseCargoLock, parseYarnLock } from './lib/lockfile-grammar.mjs';
+import { annotation, changedAllowlistEntries, md, oneLine } from './lib/gate-report.mjs';
 
 export const MIN_AGE_DAYS = 7;
 export const MAX_EXCEPTION_DAYS = 30;
@@ -100,7 +108,6 @@ const ENTRY_KEYS = ['ecosystem', 'package', 'version', 'ghsa', 'reason', 'review
 const TOP_KEYS = new Set(['$comment', 'version', 'entries']);
 const RESULT = ['PASS', 'FAIL (policy, exit 1)', 'ERROR (exit 2): not every new entry was checked'];
 
-const oneLine = (s) => String(s).replace(/[\r\n\u2028\u2029]+/g, ' ');
 const sleepReal = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const utcDay = (ms) => Date.parse(`${new Date(ms).toISOString().slice(0, 10)}T00:00:00Z`);
 
@@ -148,10 +155,10 @@ export function parseExceptions(text, todayMs) {
     const err = (msg) => errors.push(`${where}: ${msg}`);
     if (!isObject) return err('not an object');
     for (const k of Object.keys(e)) if (!ENTRY_KEYS.includes(k)) err(`unknown field "${k}"`);
-    const token = (k) => typeof e[k] === 'string' && /^\S+$/.test(e[k]);
     if (e.ecosystem !== 'npm' && e.ecosystem !== 'crates.io') err('"ecosystem" must be "npm" or "crates.io"');
-    if (!token('package')) err('"package" is required (exact package name)');
-    if (!token('version')) err('"version" is required (exact version)');
+    const nameRe = e.ecosystem === 'crates.io' ? CRATE_NAME : NPM_NAME;
+    if (typeof e.package !== 'string' || !nameRe.test(e.package)) err('"package" must be the exact package name (no alias, no wildcard)');
+    if (typeof e.version !== 'string' || !SEMVER.test(e.version)) err('"version" must be one exact SemVer version (no range, no wildcard)');
     if (typeof e.ghsa !== 'string' || !GHSA.test(e.ghsa)) err('"ghsa" must be the GHSA id (GHSA-xxxx-xxxx-xxxx) that needs this version now');
     if (typeof e.reason !== 'string' || e.reason.trim().length < 20) err('"reason" must explain why the version cannot wait (20+ characters)');
     const reviewByMs = typeof e.reviewBy === 'string' && DATE.test(e.reviewBy) ? Date.parse(`${e.reviewBy}T00:00:00Z`) : NaN;
@@ -182,6 +189,7 @@ async function getJson(fetchImpl, url, sleep, retryDelayMs) {
     try {
       res = await fetchImpl(url, {
         headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+        redirect: 'error',
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
     } catch (err) {
@@ -302,8 +310,9 @@ export async function run(opts, { git = makeGit(process.cwd()), fetchImpl = fetc
     const headText = git.read(head, lock.path);
     const baseText = git.read(base, lock.path);
     if (headText === null) throw new GateError(`${lock.path} is missing at ${opts.head}`);
-    if (baseText === null) throw new GateError(`${lock.path} is missing at ${opts.base}`);
-    const entries = newEntries(parseLock(lock, baseText, opts.base), parseLock(lock, headText, opts.head));
+    if (baseText === null) log(`${lock.path} is not in the base (${opts.base}): every entry of the head counts as new.`);
+    const baseEntries = baseText === null ? new Map() : parseLock(lock, baseText, opts.base);
+    const entries = newEntries(baseEntries, parseLock(lock, headText, opts.head));
     log(`${lock.path}: ${entries.length} new name@version entr${entries.length === 1 ? 'y' : 'ies'}`);
     for (const e of entries) added.push({ ecosystem: lock.ecosystem, ...e });
   }
@@ -438,9 +447,20 @@ async function main() {
   process.exit(exitCode);
 }
 
-// Runs as a CLI; not when imported by the tests. If the runtime does not set
-// import.meta.main, it runs: a gate that silently does nothing would be a pass.
-if (import.meta.main !== false) {
+// Runs only as a CLI: when this file is the script node was started with
+// (`node <path>/lock-entry-ages.mjs`, how CI and the runbook run it), never on
+// import. Does not depend on import.meta.main, which Node versions before
+// 22.18/24.2 do not set. Run it by path, not from stdin.
+function invokedAsCli(moduleUrl, argv1 = process.argv[1]) {
+  if (!argv1) return false;
+  try {
+    return realpathSync(argv1) === realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    return false;
+  }
+}
+
+if (invokedAsCli(import.meta.url)) {
   main().catch((err) => {
     console.log(annotation('error', 'lock age gate', `Unexpected failure, new lockfile entries were NOT checked: ${err.stack ?? err.message}`));
     process.exit(2);

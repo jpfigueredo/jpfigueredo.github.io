@@ -284,6 +284,30 @@ describe('severity', () => {
 // ---------------------------------------------------------------- ratchet
 
 describe('ratchet mode', () => {
+  it('a lockfile missing in the base counts as empty: every advisory of the head in it is new', async () => {
+    const OSV_ZIP = { 'crates.io|zip@0.6.6': ['RUSTSEC-2024-0001'] };
+    const ZIP_RECORDS = { 'RUSTSEC-2024-0001': { id: 'RUSTSEC-2024-0001', aliases: [], summary: 'zip' } };
+    const noCargo = snapshot();
+    delete noCargo['services/rust-api/Cargo.lock'];
+    const logs = [];
+    const { result } = await gate({ base: noCargo, head: snapshot({ cargo: [['zip', '0.6.6']] }) }, 'ratchet', osv(OSV_ZIP, ZIP_RECORDS), { log: (m) => logs.push(m) });
+    assert.equal(result.pass, false);
+    assert.deepEqual(result.blocking.map((r) => [r.key, r.package, r.path]), [['RUSTSEC-2024-0001', 'zip', 'services/rust-api']]);
+    assert.ok(logs.some((m) => /Cargo\.lock is not in the base/.test(m)));
+
+    const noYarn = snapshot();
+    delete noYarn['yarn.lock'];
+    delete noYarn['package.json'];
+    const npm = await gate({ base: noYarn, head: snapshot({ lock: LODASH_OLD }) }, 'ratchet', osv(OSV_LODASH, RECORDS));
+    assert.deepEqual(npm.result.blocking.map((r) => [r.key, r.path]), [['GHSA-aaaa-bbbb-cccc', 'web']]);
+  });
+
+  it('a lockfile missing in the head is still an error (exit 2)', async () => {
+    const noCargo = snapshot();
+    delete noCargo['services/rust-api/Cargo.lock'];
+    await assert.rejects(gate({ base: snapshot(), head: noCargo }, 'ratchet', osv({}, {})), /Cargo\.lock is missing at head/);
+  });
+
   it('passes when the base already has the advisory', async () => {
     const s = snapshot({ lock: LODASH_OLD });
     const { result } = await gate({ base: s, head: s }, 'ratchet', osv(OSV_LODASH, RECORDS));

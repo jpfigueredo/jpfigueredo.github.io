@@ -114,11 +114,12 @@ other PR, plus the checks below.
 gh pr view <n> --json author,headRefName,isCrossRepository
 git fetch origin develop "+pull/<n>/head:dependabot-<n>"
 git diff --stat origin/develop...dependabot-<n>
-# Age gate, develop's copy (never the PR branch's): both files, because
-# lock-entry-ages.mjs imports the lockfile parser from advisory-gate.mjs.
-gate="$(mktemp -d)"
-git show origin/develop:scripts/lock-entry-ages.mjs > "$gate/lock-entry-ages.mjs"
-git show origin/develop:scripts/advisory-gate.mjs > "$gate/advisory-gate.mjs"
+# Gate code from develop (never the PR branch's), with the scripts/lib/
+# modules both gates import (lockfile grammar, output escaping).
+gate="$(mktemp -d)"; mkdir "$gate/lib"
+for f in advisory-gate.mjs lock-entry-ages.mjs lib/lockfile-grammar.mjs lib/gate-report.mjs; do
+  git show "origin/develop:scripts/$f" > "$gate/$f"
+done
 node "$gate/lock-entry-ages.mjs" --base origin/develop --head dependabot-<n>
 ```
 
@@ -233,10 +234,14 @@ script against the PR branch:
 
 ```bash
 git fetch origin develop "+pull/<n>/head:pr-<n>"
-git show origin/develop:scripts/advisory-gate.mjs > /tmp/advisory-gate.mjs
-node /tmp/advisory-gate.mjs --mode ratchet --base origin/develop --head pr-<n>
-node /tmp/advisory-gate.mjs --mode absolute --head origin/develop   # all debt
+# "$gate": develop's copy of the gate code, as in "Dependency updates (Dependabot)".
+node "$gate/advisory-gate.mjs" --mode ratchet --base origin/develop --head pr-<n>
+node "$gate/advisory-gate.mjs" --mode absolute --head origin/develop   # all debt
 ```
+
+A lockfile that the base does not have (e.g. `Cargo.lock` in a promotion
+PR into a branch that predates it) counts as empty: every advisory of the
+head in it is new. Missing in the head is exit 2.
 
 ### Accepting an advisory (`security/advisory-allowlist.json`)
 
@@ -294,10 +299,16 @@ passes. Removed versions do not count, and neither does a change of only
   of the advisory gate. Git, tarball, `file:` and other-registry sources fail
   here with no exception possible: there is no registry publish date. Cargo
   path dependencies and workspace members (no `source`) are skipped.
-- Like the advisory gate, CI runs the base branch's copy of the script (and
-  of `advisory-gate.mjs`, whose parser it imports), so a PR that edits them
-  is judged by the old version. Reviewers run develop's copy the same way
-  (commands in "Dependency updates (Dependabot)").
+- A lockfile the base does not have counts as empty: every entry of the
+  head is new and checked (promotion PRs into `release`/`main`, which
+  predate `Cargo.lock`). Missing in the head is exit 2.
+- Like the advisory gate, CI runs the base branch's copy of the script and
+  of the `scripts/lib/` modules it imports, so a PR that edits them is
+  judged by the old version. The base copy is used once the base has
+  `security/lock-age-allowlist.json`; before that (the PR that added the
+  gate, promotions until it reaches `release`/`main`) the PR's copy runs,
+  with a warning. Reviewers run develop's copy the same way (commands in
+  "Dependency updates (Dependabot)").
 
 The usual fix is to wait, or to keep the previous version (in `yarn.lock`,
 pin the range to the older entry; in Cargo, `cargo update -p <crate>
@@ -320,8 +331,11 @@ warning, and `security/` changes need the owner's review:
 }
 ```
 
-- `ecosystem`: `npm` or `crates.io`; `package` and `version` exact (the real
-  package name, not an alias). One entry per version.
+- `ecosystem`: `npm` or `crates.io`; `package` is the exact package name
+  (the real one, not an alias) and `version` one exact SemVer version: no
+  ranges, `*` or dist-tags. One entry per version.
+- Do not delete the file, even when it is empty: its presence in the base
+  branch is what makes CI run the base's copy of the gate.
 - `ghsa`: the advisory the young version is needed for.
 - `reviewBy`: at most 30 days ahead. The day after, the entry fails every PR
   until it is removed (by then the version is old enough).

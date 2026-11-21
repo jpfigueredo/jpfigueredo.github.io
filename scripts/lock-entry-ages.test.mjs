@@ -4,9 +4,16 @@
 //   node --test scripts/lock-entry-ages.test.mjs
 
 import assert from 'node:assert/strict';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
-import { GateError } from './advisory-gate.mjs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { GateError } from './lib/lockfile-grammar.mjs';
 import { EXCEPTIONS_PATH, MAX_EXCEPTION_DAYS, MIN_AGE_MS, USER_AGENT, parseExceptions, run } from './lock-entry-ages.mjs';
+
+const SCRIPTS = dirname(fileURLToPath(import.meta.url));
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.parse('2026-11-21T12:00:00Z');
@@ -71,7 +78,7 @@ function repo(snapshots) {
 function registry({ npm = {}, crates = {}, fail } = {}) {
   const calls = [];
   const fetchImpl = async (url, init) => {
-    calls.push({ url, headers: init?.headers });
+    calls.push({ url, headers: init?.headers, init });
     if (fail) {
       const answer = fail(url);
       if (answer) return answer;
@@ -365,8 +372,15 @@ describe('exceptions (security/lock-age-allowlist.json)', () => {
     'impossible date': [{ reviewBy: '2026-02-30' }, /"reviewBy" must be a date/],
     'date with time': [{ reviewBy: '2026-12-01T00:00:00Z' }, /"reviewBy" must be a date/],
     'unknown ecosystem': [{ ecosystem: 'pypi' }, /"ecosystem" must be/],
-    'range instead of version': [{ version: '>= 4.17.21' }, /"version" is required/],
-    'package with spaces': [{ package: 'lo dash' }, /"package" is required/],
+    'range instead of version': [{ version: '>= 4.17.21' }, /"version" must be one exact SemVer version/],
+    'caret range': [{ version: '^4.17.21' }, /"version" must be one exact SemVer version/],
+    'wildcard version': [{ version: '*' }, /"version" must be one exact SemVer version/],
+    'x-range': [{ version: '4.17.x' }, /"version" must be one exact SemVer version/],
+    'dist-tag': [{ version: 'latest' }, /"version" must be one exact SemVer version/],
+    'wildcard package': [{ package: '*' }, /"package" must be the exact package name/],
+    'alias as package': [{ package: 'ts-old@npm:typescript' }, /"package" must be the exact package name/],
+    'package with spaces': [{ package: 'lo dash' }, /"package" must be the exact package name/],
+    'crate name with a slash': [{ ecosystem: 'crates.io', package: 'a/b' }, /"package" must be the exact package name/],
   };
   for (const [name, [over, re]] of Object.entries(malformed)) {
     it(`malformed (${name}) fails the gate and accepts nothing`, async () => {
@@ -393,11 +407,122 @@ describe('exceptions (security/lock-age-allowlist.json)', () => {
 // ---------------------------------------------------------------- git
 
 describe('git', () => {
-  it('fails closed on an unknown ref or a missing lockfile', async () => {
+  it('fails closed on an unknown ref or a lockfile missing in the head', async () => {
     await assert.rejects(gate({ head: snapshot() }, registry()), /unknown git ref: base/);
     const noCargo = snapshot();
     delete noCargo['services/rust-api/Cargo.lock'];
     await assert.rejects(gate({ base: snapshot(), head: noCargo }, registry()), /Cargo\.lock is missing at head/);
-    await assert.rejects(gate({ base: noCargo, head: snapshot() }, registry()), /Cargo\.lock is missing at base/);
+  });
+
+  it('a lockfile missing in the base counts as empty: every entry of the head is new and checked', async () => {
+    const noCargo = snapshot();
+    delete noCargo['services/rust-api/Cargo.lock'];
+    const logs = [];
+    const reg = registry({ crates: { 'serde@1.0.0': daysAgo(900), 'cc@1.11.3': daysAgo(1) } });
+    const out = await gate({ base: noCargo, head: snapshot({ cargo: [['serde', '1.0.0'], ['cc', '1.11.3']] }) }, reg, { log: (m) => logs.push(m) });
+    assert.deepEqual(statuses(out), ['ok crates.io:serde@1.0.0', 'young crates.io:cc@1.11.3']);
+    assert.equal(out.exitCode, 1);
+    assert.ok(logs.some((m) => /Cargo\.lock is not in the base/.test(m)));
+    const noYarn = snapshot();
+    delete noYarn['yarn.lock'];
+    const npm = await gate({ base: noYarn, head: snapshot() }, registry(OLD));
+    assert.deepEqual(statuses(npm), ['ok npm:lodash@4.17.20']);
+  });
+});
+
+// ---------------------------------------------------------------- requests
+
+describe('requests', () => {
+  const crates3 = { base: snapshot(), head: snapshot({ cargo: [['serde', '1.0.0'], ['tokio', '1.48.0'], ['zip', '0.6.6'], ['cc', '1.11.3']] }) };
+  const CRATES = { 'tokio@1.48.0': daysAgo(30), 'zip@0.6.6': daysAgo(800), 'cc@1.11.3': daysAgo(30) };
+
+  it('never has two crates.io requests in flight at once', async () => {
+    const reg = registry({ crates: CRATES });
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const fetchImpl = async (url, init) => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      return reg.fetchImpl(url, init);
+    };
+    const out = await gate(crates3, { fetchImpl });
+    assert.equal(out.exitCode, 0);
+    assert.equal(reg.calls.length, 3);
+    assert.equal(maxInFlight, 1);
+  });
+
+  it('passes a timeout signal and refuses redirects on every request', async () => {
+    const reg = registry({ ...OLD, crates: { ...CRATES, ...OLD.crates } });
+    await gate({ base: snapshot(), head: snapshot({ yarn: [LODASH_21], cargo: [['serde', '1.0.0'], ['zip', '0.6.6']] }) }, reg);
+    assert.equal(reg.calls.length, 2);
+    for (const { init } of reg.calls) {
+      assert.ok(init.signal instanceof AbortSignal);
+      assert.equal(init.redirect, 'error');
+    }
+  });
+
+  it('retries 429 like 5xx (3 calls per request), but not 404 or 403', async () => {
+    const count = async (status) => {
+      const reg = registry({ fail: () => new Response('', { status }) });
+      const out = await gate({ base: snapshot(), head: snapshot({ yarn: [LODASH_21] }) }, reg);
+      assert.equal(out.exitCode, 2);
+      return reg.calls.length;
+    };
+    assert.equal(await count(429), 3);
+    assert.equal(await count(503), 3);
+    assert.equal(await count(403), 1);
+    assert.equal(await count(404), 1);
+  });
+});
+
+// ---------------------------------------------------------------- CLI
+
+describe('CLI (child process)', () => {
+  const git = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', ...args], { cwd, stdio: 'pipe' });
+
+  it('runs only the lock age gate, nothing of the advisory gate', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lock-age-cli-'));
+    try {
+      git(dir, 'init', '-q');
+      mkdirSync(join(dir, 'services/rust-api'), { recursive: true });
+      writeFileSync(join(dir, 'yarn.lock'), yarnLock(LODASH_20));
+      writeFileSync(join(dir, 'services/rust-api/Cargo.lock'), cargoLock(['serde', '1.0.0']));
+      git(dir, 'add', '-A');
+      git(dir, 'commit', '-q', '-m', 'base');
+      git(dir, 'tag', 'base');
+      writeFileSync(join(dir, 'README'), 'x\n');
+      git(dir, 'add', '-A');
+      git(dir, 'commit', '-q', '-m', 'head');
+      // No new name@version: no registry request, so no network.
+      const res = spawnSync(process.execPath, [join(SCRIPTS, 'lock-entry-ages.mjs'), '--base', 'base', '--head', 'HEAD'], { cwd: dir, encoding: 'utf8', env: { ...process.env, GITHUB_STEP_SUMMARY: '' } });
+      assert.equal(res.status, 0, res.stdout + res.stderr);
+      assert.match(res.stdout, /^yarn\.lock: 0 new name@version entries$/m);
+      assert.match(res.stdout, /^Result: PASS$/m);
+      assert.doesNotMatch(res.stdout + res.stderr, /OSV|Advisories|advisory gate/i);
+      assert.equal(res.stdout.match(/^Result:/gm).length, 1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('importing either gate runs no CLI; running either by path does', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lock-age-import-'));
+    try {
+      const importer = join(dir, 'importer.mjs');
+      writeFileSync(importer, ['advisory-gate.mjs', 'lock-entry-ages.mjs'].map((f) => `await import(${JSON.stringify(pathToFileURL(join(SCRIPTS, f)).href)});`).join('\n') + "\nconsole.log('imported');\n");
+      const imported = spawnSync(process.execPath, [importer, '--help'], { encoding: 'utf8' });
+      assert.equal(imported.status, 0, imported.stdout + imported.stderr);
+      assert.equal(imported.stdout, 'imported\n');
+      assert.equal(imported.stderr, '');
+      for (const [file, usage] of [['advisory-gate.mjs', /usage: node scripts\/advisory-gate\.mjs/], ['lock-entry-ages.mjs', /usage: node scripts\/lock-entry-ages\.mjs/]]) {
+        const cli = spawnSync(process.execPath, [join(SCRIPTS, file), '--help'], { encoding: 'utf8' });
+        assert.equal(cli.status, 2);
+        assert.match(cli.stderr, usage);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

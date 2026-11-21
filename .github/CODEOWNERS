@@ -4,3 +4,5 @@
 /.github/   @jpfigueredo
 /scripts/   @jpfigueredo
 /security/  @jpfigueredo
+# The Node version CI runs every step with, the dependency gates included.
+/.nvmrc     @jpfigueredo
