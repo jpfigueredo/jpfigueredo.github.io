@@ -1,6 +1,7 @@
 import React from 'react';
 import type { SimulatorState } from '../engine/types';
-import { Broker, BROKER_WIDTH, getBrokerHeight, getPartitionCenterX, getPartitionCenterY } from './Broker';
+import { Broker } from './Broker';
+import { BROKER_WIDTH, getBrokerHeight, getPartitionCenterX, getPartitionCenterY } from './brokerLayout';
 import { Producer, PRODUCER_WIDTH, PRODUCER_HEIGHT } from './Producer';
 import { Consumer, CONSUMER_WIDTH, CONSUMER_HEIGHT } from './Consumer';
 import { MessagePacket } from './MessagePacket';

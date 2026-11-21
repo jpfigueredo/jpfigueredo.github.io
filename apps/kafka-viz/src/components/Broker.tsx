@@ -1,25 +1,15 @@
 import React from 'react';
 import type { Broker as BrokerType } from '../engine/types';
 import { Partition } from './Partition';
-
-export const BROKER_WIDTH = 160;
-export const BROKER_HEADER_HEIGHT = 30;
-const PARTITION_HEIGHT = 40;
-const PARTITION_WIDTH = 44;
-const PARTITION_GAP = 8;
-const BROKER_PADDING = 12;
-
-export function getBrokerHeight(_broker: BrokerType): number {
-  return BROKER_HEADER_HEIGHT + BROKER_PADDING + PARTITION_HEIGHT + BROKER_PADDING;
-}
-
-export function getPartitionCenterX(partitionIndex: number): number {
-  return BROKER_PADDING + partitionIndex * (PARTITION_WIDTH + PARTITION_GAP) + PARTITION_WIDTH / 2;
-}
-
-export function getPartitionCenterY(): number {
-  return BROKER_HEADER_HEIGHT + BROKER_PADDING + PARTITION_HEIGHT / 2;
-}
+import {
+  BROKER_HEADER_HEIGHT,
+  BROKER_PADDING,
+  BROKER_WIDTH,
+  PARTITION_GAP,
+  PARTITION_HEIGHT,
+  PARTITION_WIDTH,
+  getBrokerHeight,
+} from './brokerLayout';
 
 type Props = {
   broker: BrokerType;
