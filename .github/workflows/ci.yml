@@ -331,13 +331,7 @@ jobs:
 
       - name: Lint
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        # Excluded until its lint setup is fixed (known, tracked separately):
-        #   @jpfig/kafka-viz - no eslint.config.* for ESLint 10
-        # To widen coverage, delete the matching --filter line.
-        run: >-
-          yarn turbo run lint
-          --filter='!rust-api'
-          --filter='!@jpfig/kafka-viz'
+        run: yarn turbo run lint --filter='!rust-api'
 
       - name: Build
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
