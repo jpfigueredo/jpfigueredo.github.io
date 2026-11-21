@@ -59,9 +59,10 @@
 //
 // CI runs the copy of this file from the PR's base branch (see ci.yml), with
 // the lockfiles and the allowlist of the head, so a PR cannot weaken the gate
-// that judges it. For that reason this file is self-contained: no imports
-// except node: built-ins, and nothing read from the working tree; every file
-// is read with `git show <ref>:<path>`.
+// that judges it. For that reason it imports only node: built-ins and the
+// pure modules in scripts/lib/ (lockfile grammar, output escaping), which CI
+// copies from the base branch with it, and it reads nothing from the working
+// tree; every file is read with `git show <ref>:<path>`.
 //
 // Usage (from anywhere inside the repo):
 //   node scripts/advisory-gate.mjs                                 # ratchet, origin/develop vs HEAD
@@ -78,15 +79,19 @@
 // answer, git, a lockfile entry that fails validation): NOT a clean result.
 
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { GateError, parseCargoLock, parseYarnLock } from './lib/lockfile-grammar.mjs';
+import { annotation, changedAllowlistEntries, escapeData, md, oneLine } from './lib/gate-report.mjs';
+
+// Re-exported for the tests and for callers of the old module layout.
+export { GateError, parseCargoLock, parseYarnLock, annotation, changedAllowlistEntries, escapeData, md };
 
 export const OSV_API = 'https://api.osv.dev/v1';
 export const ALLOWLIST_PATH = 'security/advisory-allowlist.json';
 const YARN_LOCK = 'yarn.lock';
 const CARGO_LOCK = 'services/rust-api/Cargo.lock';
 const CARGO_PATH = 'services/rust-api';
-const CRATES_IO_INDEX = 'registry+https://github.com/rust-lang/crates.io-index';
-const NPM_REGISTRY_HOSTS = new Set(['registry.npmjs.org', 'registry.yarnpkg.com']);
 const TIMEOUT_MS = 30_000;
 const ATTEMPTS = 3;
 const BATCH_SIZE = 500;
@@ -113,238 +118,6 @@ const ENTRY_KEYS = new Set(['id', 'ecosystem', 'package', 'version', 'range', 'p
 const ECOSYSTEMS = new Set(['npm', 'crates.io']);
 const SEVERITY_RANK = { info: 0, low: 1, medium: 2, unknown: 3, high: 4, critical: 5 };
 const SEVERITY_ORDER = ['critical', 'high', 'unknown', 'medium', 'low', 'info'];
-
-export class GateError extends Error {}
-
-// Strict SemVer 2.0.0 (no "v", no spaces, no ranges).
-const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
-// npm package names (lowercase, URL-safe; optional @scope/). Older registry
-// names with capitals are rejected too: fail closed, review by hand.
-const NPM_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
-const CRATE_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-
-// Package name in a yarn.lock key ("name@range", "@scope/name@range"), and
-// the real name behind an alias ("alias@npm:real@range").
-function keyPackageName(key) {
-  const at = key.indexOf('@', key.startsWith('@') ? 1 : 0);
-  if (at <= 0) throw new GateError(`yarn.lock: cannot read the package name in key ${JSON.stringify(key)}`);
-  const range = key.slice(at + 1);
-  return range.startsWith('npm:') ? keyPackageName(range.slice(4)) : key.slice(0, at);
-}
-
-// ------------------------------------------------------------------ lockfiles
-
-// yarn 1 lockfile -> { byKey: Map key -> entry, byPackage: Map "name@version" -> entry }.
-//
-// Closed grammar: only what yarn 1 itself writes is accepted, line by line.
-// yarn's own parser is more lenient (quoted field names, repeated fields where
-// the last one wins, blocks without a blank line between them); a lockfile
-// that yarn and this gate would read differently could install one tarball
-// while the gate checks another version. So anything outside this grammar is
-// an error (exit 2), not a guess:
-//
-//   # comment                     only before the first entry
-//   <blank line>                  one or more between entries
-//   key[, key...]:                key = name@range, or "..." (no " \ , inside)
-//     version "<semver>"          once
-//     resolved "<url>"            once; https://registry.(npmjs.org|yarnpkg.com)
-//                                 /<name>/-/<file>.tgz[#<sha1>], nothing else
-//     integrity <algo>-<base64>   once
-//     uid "<value>"               at most once
-//     dependencies:               at most once each, followed by one or
-//     optionalDependencies:       more lines:  name "range"  (4 spaces)
-//
-// The package name comes from the `resolved` URL (so aliases
-// "string-width-cjs@npm:string-width@^4" resolve to the published package),
-// must be a valid npm name, every key must name it, and the tarball file must
-// be "<name without scope>-<version>.tgz".
-const YARN_UNQUOTED = '[A-Za-z0-9][^\\s",:#\\\\]*';
-const YARN_QUOTED = '"[^"\\\\,]+"';
-const YARN_KEY = `(?:${YARN_QUOTED}|${YARN_UNQUOTED})`;
-const YARN_HEADER = new RegExp(`^${YARN_KEY}(?:, ${YARN_KEY})*:$`);
-const YARN_FIELD = /^ {2}(version|resolved|uid) "([^"\\]*)"$|^ {2}integrity ([a-z0-9]+-[A-Za-z0-9+/]+={0,2})$|^ {2}(dependencies|optionalDependencies):$/;
-const YARN_DEP = new RegExp(`^ {4}(${YARN_KEY}) "([^"\\\\]*)"$`);
-const RESOLVED = /^https:\/\/(registry\.npmjs\.org|registry\.yarnpkg\.com)(\/[A-Za-z0-9@._~\/-]+)(#[0-9a-f]{40})?$/;
-
-export function parseYarnLock(text) {
-  const byKey = new Map();
-  const byPackage = new Map();
-  const unquote = (k) => (k.startsWith('"') ? k.slice(1, -1) : k);
-  const lines = text.split('\n');
-  if (lines.at(-1) === '') lines.pop();
-  let block = null;
-  let seenEntry = false;
-  let afterBlank = true;
-  const finish = () => {
-    if (!block) return;
-    const where = `yarn.lock line ${block.line} (${block.header})`;
-    for (const f of ['version', 'resolved', 'integrity']) {
-      if (block.fields[f] === undefined) throw new GateError(`${where}: missing ${f}`);
-    }
-    for (const section of ['dependencies', 'optionalDependencies']) {
-      if (block.fields[section] !== undefined && block.fields[section] === 0) throw new GateError(`${where}: empty ${section}:`);
-    }
-    const { version, resolved } = block.fields;
-    const m = RESOLVED.exec(resolved);
-    if (!m) {
-      throw new GateError(`${where}: resolved ${JSON.stringify(resolved)} is not https://registry.npmjs.org or registry.yarnpkg.com /<name>/-/<file>.tgz (no credentials, port, query or other fragment); OSV cannot check it`);
-    }
-    const rawPath = m[2];
-    let url;
-    try {
-      url = new URL(resolved);
-    } catch {
-      throw new GateError(`${where}: invalid resolved URL ${JSON.stringify(resolved)}`);
-    }
-    if (url.pathname !== rawPath || url.username || url.password || url.port || url.search || !NPM_REGISTRY_HOSTS.has(url.hostname)) {
-      throw new GateError(`${where}: resolved ${JSON.stringify(resolved)} is not a plain registry URL`);
-    }
-    const path = /^\/((?:@[^/]+\/)?[^/@][^/]*)\/-\/([^/]+)$/.exec(rawPath);
-    if (!path || rawPath.split('/').some((seg) => seg === '.' || seg === '..')) {
-      throw new GateError(`${where}: resolved path ${JSON.stringify(rawPath)} is not /<name>/-/<file>.tgz`);
-    }
-    const [, name, tarball] = path;
-    if (!NPM_NAME.test(name)) throw new GateError(`${where}: invalid npm package name ${JSON.stringify(name)} in resolved`);
-    if (!SEMVER.test(version)) throw new GateError(`${where}: version ${JSON.stringify(version)} is not a SemVer version`);
-    const expected = `${name.split('/').pop()}-${version}.tgz`;
-    if (tarball !== expected) {
-      throw new GateError(`${where}: version "${version}" does not match the resolved tarball ${JSON.stringify(tarball)} (expected ${expected})`);
-    }
-    for (const key of block.keys) {
-      const keyName = keyPackageName(key);
-      if (keyName !== name) throw new GateError(`${where}: key ${JSON.stringify(key)} names ${JSON.stringify(keyName)} but resolved is ${name}`);
-      if (byKey.has(key)) throw new GateError(`${where}: key ${JSON.stringify(key)} appears in more than one entry`);
-    }
-    const id = `${name}@${version}`;
-    const entry = byPackage.get(id) ?? { ecosystem: 'npm', name, version, deps: [] };
-    entry.deps.push(...block.deps);
-    byPackage.set(id, entry);
-    for (const key of block.keys) byKey.set(key, entry);
-    block = null;
-  };
-  lines.forEach((line, i) => {
-    const n = i + 1;
-    const bad = (why) => {
-      throw new GateError(`yarn.lock line ${n}: ${why}: ${JSON.stringify(line.slice(0, 120))}`);
-    };
-    if (/[\t\r]/.test(line)) bad('tab or carriage return (yarn writes neither)');
-    if (line === '') {
-      finish();
-      afterBlank = true;
-      return;
-    }
-    if (line.startsWith('#')) {
-      if (seenEntry) bad('comment after the first entry (yarn only writes them in the header)');
-      return;
-    }
-    if (!line.startsWith(' ')) {
-      if (!afterBlank) bad('entry not separated from the previous one by a blank line');
-      if (!YARN_HEADER.test(line)) bad('not a yarn 1 entry header');
-      const keys = line.slice(0, -1).split(', ').map(unquote);
-      block = { line: n, header: line.slice(0, 120), keys, fields: {}, deps: [], section: null, depNames: new Set() };
-      seenEntry = true;
-      afterBlank = false;
-      return;
-    }
-    afterBlank = false;
-    if (!block) bad('indented line outside an entry');
-    const field = YARN_FIELD.exec(line);
-    if (field) {
-      const name = field[1] ?? (field[3] !== undefined ? 'integrity' : field[4]);
-      if (block.fields[name] !== undefined) bad(`repeated field "${name}"`);
-      block.fields[name] = field[1] ? field[2] : field[3] ?? 0;
-      block.section = field[4] ?? null;
-      return;
-    }
-    const dep = YARN_DEP.exec(line);
-    if (dep) {
-      if (!block.section) bad('dependency line outside dependencies:/optionalDependencies:');
-      const depName = unquote(dep[1]);
-      const sectionKey = `${block.section}|${depName}`;
-      if (block.depNames.has(sectionKey)) bad(`repeated dependency "${depName}"`);
-      block.depNames.add(sectionKey);
-      block.fields[block.section] += 1;
-      block.deps.push({ name: depName, range: dep[2] });
-      return;
-    }
-    bad('unexpected line (unknown or quoted field name, wrong indentation, or a value yarn would not write)');
-  });
-  finish();
-  if (byPackage.size === 0) throw new GateError('yarn.lock has no entries');
-  return { byKey, byPackage };
-}
-
-// Cargo.lock -> Map "name@version" -> entry. Closed grammar, as Cargo writes
-// it: comment lines and `version = N` before the first [[package]]; in each
-// package `name`, `version` (required), `source`, `checksum` and a
-// multi-line `dependencies = [ "x", ... ]`, each at most once; nothing else
-// (no other tables, no single quotes, no escapes). Packages without `source`
-// are the local crate (rust-api itself) and are skipped; any source other
-// than crates.io is an error (OSV cannot check a git dependency by version).
-const CARGO_FIELD = /^(name|version|source|checksum) = "([^"\\]*)"$/;
-export function parseCargoLock(text) {
-  const byPackage = new Map();
-  const lines = text.split('\n');
-  if (lines.at(-1) === '') lines.pop();
-  let pkg = null;
-  let inDeps = false;
-  let header = true;
-  const packages = [];
-  lines.forEach((line, i) => {
-    const bad = (why) => {
-      throw new GateError(`Cargo.lock line ${i + 1}: ${why}: ${JSON.stringify(line.slice(0, 120))}`);
-    };
-    if (inDeps) {
-      if (line === ']') inDeps = false;
-      else if (!/^ "[^"\\]+",$/.test(line)) bad('unexpected line in dependencies');
-      return;
-    }
-    if (line === '') return;
-    if (header) {
-      if (line.startsWith('#')) return;
-      if (/^version = \d+$/.test(line)) {
-        header = 'version-seen';
-        return;
-      }
-    }
-    if (line === '[[package]]') {
-      header = false;
-      pkg = { line: i + 1, fields: {} };
-      packages.push(pkg);
-      return;
-    }
-    if (!pkg) bad('unexpected line before the first [[package]]');
-    const m = CARGO_FIELD.exec(line);
-    if (m) {
-      if (pkg.fields[m[1]] !== undefined) bad(`repeated key "${m[1]}"`);
-      pkg.fields[m[1]] = m[2];
-      return;
-    }
-    if (line === 'dependencies = [') {
-      if (pkg.fields.dependencies !== undefined) bad('repeated key "dependencies"');
-      pkg.fields.dependencies = true;
-      inDeps = true;
-      return;
-    }
-    bad('unexpected line (unknown key, table or format Cargo would not write)');
-  });
-  if (inDeps) throw new GateError('Cargo.lock: unterminated dependencies array');
-  for (const { line, fields } of packages) {
-    const { name, version, source } = fields;
-    if (!name || !version) throw new GateError(`Cargo.lock line ${line}: package without name or version`);
-    if (!CRATE_NAME.test(name)) throw new GateError(`Cargo.lock: invalid crate name ${JSON.stringify(name)}`);
-    if (!SEMVER.test(version)) throw new GateError(`Cargo.lock: ${name}: version ${JSON.stringify(version)} is not a SemVer version`);
-    if (source === undefined) continue;
-    if (source !== CRATES_IO_INDEX) {
-      throw new GateError(`Cargo.lock: ${name} ${version} is not from crates.io (${JSON.stringify(source)}); OSV cannot check it`);
-    }
-    if (!/^[0-9a-f]{64}$/.test(fields.checksum ?? '')) throw new GateError(`Cargo.lock: ${name} ${version} has no valid checksum`);
-    if (byPackage.has(`${name}@${version}`)) throw new GateError(`Cargo.lock: ${name} ${version} listed twice`);
-    byPackage.set(`${name}@${version}`, { ecosystem: 'crates.io', name, version, deps: [] });
-  }
-  if (byPackage.size === 0) throw new GateError('Cargo.lock has no crates.io packages');
-  return byPackage;
-}
 
 // ------------------------------------------------------------------ workspaces
 
@@ -452,22 +225,34 @@ function makeGit(cwd) {
 }
 
 // Everything the gate needs from one commit.
-export function loadSnapshot(git, ref) {
+//
+// The head must have package.json, yarn.lock and Cargo.lock. For the base of
+// a ratchet (`missingLockfileIsEmpty`), a missing lockfile means "no packages
+// of that ecosystem", so every advisory of the head's packages in it is new:
+// e.g. a promotion PR into a branch that predates Cargo.lock. (package.json
+// is then only needed if the base has a yarn.lock.)
+export function loadSnapshot(git, ref, { missingLockfileIsEmpty = false } = {}) {
   const sha = git.resolve(ref);
   const files = new Set(git.files(sha));
-  for (const required of ['package.json', YARN_LOCK, CARGO_LOCK]) {
+  const hasYarn = files.has(YARN_LOCK) || !missingLockfileIsEmpty;
+  const hasCargo = files.has(CARGO_LOCK) || !missingLockfileIsEmpty;
+  for (const required of [...(hasYarn ? ['package.json', YARN_LOCK] : []), ...(hasCargo ? [CARGO_LOCK] : [])]) {
     if (!files.has(required)) throw new GateError(`${required} is missing at ${ref}`);
   }
-  let rootManifest;
-  try {
-    rootManifest = JSON.parse(git.show(sha, 'package.json'));
-  } catch (err) {
-    throw new GateError(`invalid package.json at ${ref}: ${err.message}`);
+  const yarn = hasYarn ? parseYarnLock(git.show(sha, YARN_LOCK)) : { byKey: new Map(), byPackage: new Map() };
+  let yarnPaths = new Map();
+  if (hasYarn) {
+    let rootManifest;
+    try {
+      rootManifest = JSON.parse(git.show(sha, 'package.json'));
+    } catch (err) {
+      throw new GateError(`invalid package.json at ${ref}: ${err.message}`);
+    }
+    const workspaces = listWorkspaces(rootManifest, files, (p) => git.show(sha, p));
+    yarnPaths = attributeYarn(yarn, workspaces);
   }
-  const yarn = parseYarnLock(git.show(sha, YARN_LOCK));
-  const workspaces = listWorkspaces(rootManifest, files, (p) => git.show(sha, p));
-  const yarnPaths = attributeYarn(yarn, workspaces);
-  const cargo = parseCargoLock(git.show(sha, CARGO_LOCK));
+  const cargo = hasCargo ? parseCargoLock(git.show(sha, CARGO_LOCK)) : new Map();
+  const missing = [...(hasYarn ? [] : [YARN_LOCK]), ...(hasCargo ? [] : [CARGO_LOCK])];
   const packages = [];
   for (const [id, entry] of yarn.byPackage) {
     const paths = yarnPaths.get(id) ?? new Map([['(unattributed)', 'dev']]);
@@ -477,7 +262,7 @@ export function loadSnapshot(git, ref) {
     packages.push({ ecosystem: 'crates.io', name: entry.name, version: entry.version, paths: new Map([[CARGO_PATH, '-']]) });
   }
   const allowlistText = files.has(ALLOWLIST_PATH) ? git.show(sha, ALLOWLIST_PATH) : null;
-  return { ref, sha, packages, allowlistText, counts: { npm: yarn.byPackage.size, cargo: cargo.size } };
+  return { ref, sha, packages, allowlistText, missing, counts: { npm: yarn.byPackage.size, cargo: cargo.size } };
 }
 
 // ------------------------------------------------------------------ OSV
@@ -840,22 +625,6 @@ function checkDeadlines(entries, todayMs) {
   return { errors, warnings };
 }
 
-// Allowlist entries of the head that are not, byte for byte (keys sorted),
-// in the base allowlist: added or changed by this change. They take effect
-// in the same run, so a human has to approve them; the gate points them out.
-export function changedAllowlistEntries(headText, baseText) {
-  const canonical = (e) => JSON.stringify(e, Object.keys(e ?? {}).sort());
-  const entriesOf = (text) => {
-    try {
-      const doc = JSON.parse(text ?? 'null');
-      return Array.isArray(doc?.entries) ? doc.entries.filter((e) => e && typeof e === 'object') : [];
-    } catch {
-      return [];
-    }
-  };
-  const before = new Set(entriesOf(baseText).map(canonical));
-  return entriesOf(headText).filter((e) => !before.has(canonical(e)));
-}
 
 // ------------------------------------------------------------------ evaluate
 
@@ -906,14 +675,6 @@ export function evaluate({ mode, headFindings, baseFindings, allowlistText, base
 // in a value could otherwise start a new workflow command (for example
 // `::stop-commands::`).
 
-// Workflow command data: GitHub decodes %25, %0D, %0A back, so a value can
-// never end the command line.
-export const escapeData = (s) => String(s).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
-export const annotation = (level, title, message) => `::${level} title=${title}::${escapeData(message)}`;
-// Plain log line: no line breaks.
-const oneLine = (s) => String(s).replace(/[\r\n\u2028\u2029]+/g, ' ');
-// Markdown table cell / list item: one line, no table or HTML breakout.
-export const md = (s) => oneLine(s).replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/`/g, "'");
 
 function sortRows(rows) {
   return rows.slice().sort(
@@ -1017,7 +778,8 @@ function parseArgs(argv) {
 
 export async function run(opts, { git = makeGit(process.cwd()), fetchImpl = fetch, todayMs, retryDelayMs, log = console.log } = {}) {
   const head = loadSnapshot(git, opts.head);
-  const base = opts.mode === 'ratchet' ? loadSnapshot(git, opts.base) : null;
+  const base = opts.mode === 'ratchet' ? loadSnapshot(git, opts.base, { missingLockfileIsEmpty: true }) : null;
+  for (const path of base?.missing ?? []) log(`${path} is not in the base (${opts.base}): every advisory of the head's packages in it counts as new.`);
   const all = new Map();
   for (const p of [...head.packages, ...(base?.packages ?? [])]) all.set(pkgKey(p), p);
   log(`Querying OSV for ${all.size} package versions (head ${head.sha.slice(0, 12)}${base ? `, base ${base.sha.slice(0, 12)}` : ''})...`);
@@ -1082,10 +844,21 @@ async function main() {
   process.exit(result.pass ? 0 : 1);
 }
 
-// Runs as a CLI (file or stdin); not when imported by the tests. If the
-// runtime does not set import.meta.main, it runs: a gate that silently does
-// nothing would be a pass.
-if (import.meta.main !== false) {
+// Runs only as a CLI: when this file is the script node was started with
+// (`node <path>/advisory-gate.mjs`, how CI and the runbook run it), never on
+// import. Does not depend on import.meta.main, which Node versions before
+// 22.18/24.2 do not set: there, a guard on it would also run this main() when
+// another script imports this file. Run it by path, not from stdin.
+function invokedAsCli(moduleUrl, argv1 = process.argv[1]) {
+  if (!argv1) return false;
+  try {
+    return realpathSync(argv1) === realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    return false;
+  }
+}
+
+if (invokedAsCli(import.meta.url)) {
   main().catch((err) => {
     console.log(annotation('error', 'advisory gate', `Unexpected failure, dependencies were NOT checked: ${err.stack ?? err.message}`));
     process.exit(2);
