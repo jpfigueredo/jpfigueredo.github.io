@@ -3,13 +3,19 @@
 //   node --test scripts/advisory-gate.test.mjs
 
 import assert from 'node:assert/strict';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   GateError,
   annotation,
   cvss3BaseScore,
   deadlineSeverityOf,
   evaluate,
+  invokedAsCli,
   md,
   parseAllowlist,
   parseCargoLock,
@@ -17,7 +23,9 @@ import {
   run,
   severityOf,
 } from './advisory-gate.mjs';
+import { GATE_IMPORTS, gateSourceProblems } from './gate-source.testlib.mjs';
 
+const SCRIPTS = dirname(fileURLToPath(import.meta.url));
 const TODAY = Date.parse('2026-11-19T00:00:00Z');
 const REG = 'https://registry.yarnpkg.com';
 
@@ -522,5 +530,70 @@ describe('fails closed', () => {
     const { result } = await gate({ head: snapshot() }, 'absolute', o);
     assert.equal(page, 2);
     assert.deepEqual(result.blocking.map((r) => r.key), ['GHSA-aaaa-bbbb-cccc']);
+  });
+});
+
+// ---------------------------------------------------------------- CLI
+
+// CI copies this gate from the base branch and runs it by path; it counts as a
+// pass only if it exits 0 AND prints exactly one "Result: PASS" line (see
+// ci.yml). These tests pin both halves: the CLI starts only when run by path,
+// and a clean run prints that line.
+describe('CLI entry point', () => {
+  const GATE = join(SCRIPTS, 'advisory-gate.mjs');
+  const URL_OF_GATE = pathToFileURL(GATE).href;
+
+  it('invokedAsCli: true only when argv[1] is this file (also through a symlink)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'advisory-cli-guard-'));
+    try {
+      const link = join(dir, 'gate.mjs');
+      symlinkSync(GATE, link);
+      const other = join(dir, 'other.mjs');
+      writeFileSync(other, '');
+      assert.equal(invokedAsCli(URL_OF_GATE, GATE), true);
+      assert.equal(invokedAsCli(URL_OF_GATE, link), true);
+      assert.equal(invokedAsCli(URL_OF_GATE, other), false);
+      assert.equal(invokedAsCli(URL_OF_GATE, join(SCRIPTS, 'lock-entry-ages.mjs')), false);
+      assert.equal(invokedAsCli(URL_OF_GATE, join(dir, 'missing.mjs')), false);
+      assert.equal(invokedAsCli(URL_OF_GATE, ''), false);
+      // Started without a script path (node -e, or the source on stdin),
+      // argv[1] is unset: the guard is false and nothing runs, with exit 0.
+      // That silent exit 0 is why CI also requires the "Result: PASS" line.
+      const noPath = spawnSync(process.execPath, ['--input-type=module', '-e', `const m = await import(${JSON.stringify(URL_OF_GATE)}); console.log(m.invokedAsCli(${JSON.stringify(URL_OF_GATE)}));`], { encoding: 'utf8' });
+      assert.equal(noPath.status, 0, noPath.stderr);
+      assert.equal(noPath.stdout, 'false\n');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('the source uses no import.meta other than .url and imports only node: and ./lib/', () => {
+    assert.deepEqual(gateSourceProblems(readFileSync(GATE, 'utf8'), GATE_IMPORTS), []);
+  });
+
+  it('a clean run by path exits 0 and prints exactly one "Result: PASS" line, last', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'advisory-cli-'));
+    const git = (...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', ...args], { cwd: dir, stdio: 'pipe' });
+    try {
+      git('init', '-q');
+      mkdirSync(join(dir, 'services/rust-api'), { recursive: true });
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'root', private: true, dependencies: { lodash: '^4.17.0' } }));
+      writeFileSync(join(dir, 'yarn.lock'), yarnLock(yarnEntry(['lodash@^4.17.0'], 'lodash', '4.17.21')));
+      writeFileSync(join(dir, 'services/rust-api/Cargo.lock'), cargoLock(['serde', '1.0.0']));
+      git('add', '-A');
+      git('commit', '-q', '-m', 'base');
+      // OSV is replaced by a preloaded fake that reports no advisories, so the
+      // real CLI runs by path with no network.
+      const fakeOsv = join(dir, 'fake-osv.mjs');
+      writeFileSync(fakeOsv, "globalThis.fetch = async (url, init) => { process.stderr.write(`fake OSV: ${url}\\n`); return Response.json({ results: JSON.parse(init.body).queries.map(() => ({})) }); };\n");
+      const res = spawnSync(process.execPath, ['--import', pathToFileURL(fakeOsv).href, GATE, '--mode', 'ratchet', '--base', 'HEAD', '--head', 'HEAD'], { cwd: dir, encoding: 'utf8', env: { ...process.env, GITHUB_STEP_SUMMARY: '' } });
+      assert.equal(res.status, 0, res.stdout + res.stderr);
+      assert.equal(res.stderr, 'fake OSV: https://api.osv.dev/v1/querybatch\n');
+      assert.match(res.stdout, /^Querying OSV for 2 package versions/m);
+      assert.deepEqual(res.stdout.match(/^Result:.*$/gm), ['Result: PASS']);
+      assert.match(res.stdout, /\nResult: PASS\n$/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
