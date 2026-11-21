@@ -20,8 +20,7 @@ This repository hosts the **frontend portfolio** for João Figueredo, showcasing
 jpfigueredo.github.io/
 ├── web/                    # Main React portfolio app
 ├── apps/                   # Sub-applications showcase
-│   ├── goom64/            # GOOM64 (Go + WASM) game
-│   └── sw-timeline/       # Software Engineering Timeline
+│   └── goom64/            # GOOM64 (Go + WASM) game
 ├── archive/               # Apps taken offline (not workspaces, not built or deployed)
 ├── packages/              # Shared components & config
 │   ├── ui/               # Reusable UI components

@@ -36,7 +36,6 @@ Scopes map to packages/apps in the monorepo:
 | Scope | Path |
 |---|---|
 | `web` | `web/` |
-| `sw-timeline` | `apps/sw-timeline/` |
 | `kafka-viz` | `apps/kafka-viz/` |
 | `angular-demo` | `archive/angular-demo/` (offline, not a workspace) |
 | `doom64` | `apps/doom64-wasm/` |
@@ -53,13 +52,13 @@ Omit scope only for cross-cutting changes that don't fit a single package.
 ### Examples
 
 ```
-feat(sw-timeline): add macintosh-1984 and java-1995 events with materialist analysis
+feat(kafka-viz): add a multi-broker scenario with partition replicas
 
 fix(kafka-viz): rename unused broker param to _broker to satisfy strict TS
 
 refactor(web): split Button styles into typed constants to fix TS2559
 
-style(sw-timeline): convert kafka.scss to plain CSS, remove sass dependency
+style(ui): reorder Button class names, no behavior change
 
 ci: add BFF and Rust API deploy hooks for Render.com
 

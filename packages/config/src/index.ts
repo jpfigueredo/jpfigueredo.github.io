@@ -1,10 +1,6 @@
 export const version = '1.0.0-beta.1';
 
 export const apps = {
-  swTimeline: {
-    basePath: '/apps/sw-timeline/',
-    iframeSrcProd: 'https://jpfigueredo.github.io/apps/sw-timeline/index.html',
-  },
   ohara: {
     basePath: '/apps/ohara/front/',
     iframeSrcProd: 'https://jpfigueredo.github.io/apps/ohara/front/index.html',
@@ -23,6 +19,5 @@ export const api = {
 } as const;
 
 export const features = {
-  swTimelineAnalysis: true,
   kafkaViz: true,
 } as const;
