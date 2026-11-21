@@ -222,8 +222,11 @@ needs no token and installs nothing.
   `scripts/advisory-gate.mjs`, CI fetches `develop` and requires the PR's
   gate files (`scripts/advisory-gate.mjs`, `scripts/lib/*.mjs` that CI copies)
   to be develop's, same mode and blob; then develop's copy runs. Any
-  difference is exit 2. Only promotions, and hotfixes that do not touch the
-  gate, pass; change the gate in a PR to `develop` first.
+  difference, a missing file included, or a failed fetch is exit 2. Until
+  `release`/`main` receive the gate through a promotion, PRs to them pass
+  only when their gate files are byte-identical to develop's (a hotfix
+  branched from `main` does not have them and fails): promote `develop`
+  first.
 - **How CI runs both gates:** with a clean environment (`env -i` with only
   `PATH`, `HOME` and `GITHUB_STEP_SUMMARY`, so `NODE_OPTIONS`, TLS, CA and
   proxy variables of the job never reach them), and exit 0 counts as a pass
@@ -316,13 +319,15 @@ passes. Removed versions do not count, and neither does a change of only
 - Like the advisory gate, CI runs the base branch's copy of the script and
   of the `scripts/lib/` modules it imports, so a PR that edits them is
   judged by the old version. The base copy is used once the base has
-  `security/lock-age-allowlist.json`. Before that (promotion and hotfix PRs
-  to `release`/`main` until the gate gets there), CI fetches `develop` and
+  `security/lock-age-allowlist.json`. Before that (PRs to `release`/`main`
+  until they receive the gate through a promotion), CI fetches `develop` and
   requires the PR's `scripts/lock-entry-ages.mjs`,
   `scripts/lib/lockfile-grammar.mjs` and `scripts/lib/gate-report.mjs` to be
   develop's, same mode and blob; then develop's copy runs, with a warning.
-  Any difference is exit 2: only promotions, and hotfixes that do not touch
-  the gate, pass. Reviewers run develop's copy the same way (commands in
+  Any difference, a missing file included, or a failed fetch is exit 2:
+  until then, PRs to `release`/`main` pass only when their gate files are
+  byte-identical to develop's; promote `develop` first. Reviewers run
+  develop's copy the same way (commands in
   "Dependency updates (Dependabot)").
 - Same clean environment and positive proof as the advisory gate: `env -i`
   with only `PATH`, `HOME` and `GITHUB_STEP_SUMMARY`; exit 0 counts only

@@ -23,6 +23,7 @@ import {
   run,
   severityOf,
 } from './advisory-gate.mjs';
+import { GATE_IMPORTS, gateSourceProblems } from './gate-source.testlib.mjs';
 
 const SCRIPTS = dirname(fileURLToPath(import.meta.url));
 const TODAY = Date.parse('2026-11-19T00:00:00Z');
@@ -567,7 +568,7 @@ describe('CLI entry point', () => {
   });
 
   it('the source uses no import.meta other than .url and imports only node: and ./lib/', () => {
-    assert.deepEqual(gateSourceProblems(readFileSync(GATE, 'utf8'), /^(?:node:[a-z_/]+|\.\/lib\/[a-z-]+\.mjs)$/), []);
+    assert.deepEqual(gateSourceProblems(readFileSync(GATE, 'utf8'), GATE_IMPORTS), []);
   });
 
   it('a clean run by path exits 0 and prints exactly one "Result: PASS" line, last', () => {
@@ -596,28 +597,3 @@ describe('CLI entry point', () => {
     }
   });
 });
-
-// Static checks of a gate's source (comment lines dropped): CI copies the
-// gate and scripts/lib/ from the base branch and nothing else, and the CLI
-// must start only through invokedAsCli(import.meta.url), never through
-// import.meta.main (unset before Node 22.18/24.2, so a guard on it ran the CLI
-// on import). Returns a list of problems.
-function gateSourceProblems(source, allowedSpecifier) {
-  const code = source
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('\n')
-    .filter((line) => !/^\s*\/\//.test(line))
-    .join('\n');
-  const problems = [];
-  for (const m of code.matchAll(/\bimport\s*\.\s*meta\b(?!\s*\.\s*url\b)/g)) problems.push(`uses ${m[0]} other than import.meta.url`);
-  for (const m of code.matchAll(/\bimport\s*\(|\brequire\s*\(|\bcreateRequire\b|\bprocess\.binding\b/g)) problems.push(`dynamic import or require: ${m[0]}`);
-  for (const m of code.matchAll(/^\s*(?:import|export)\b[^;]*?\bfrom\s*(['"])([^'"]*)\1|^\s*import\s*(['"])([^'"]*)\3/gm)) {
-    const specifier = m[2] ?? m[4];
-    if (!allowedSpecifier.test(specifier)) problems.push(`imports ${specifier}`);
-  }
-  const guards = code.match(/^if \(invokedAsCli\(import\.meta\.url\)\) \{$/gm) ?? [];
-  if (guards.length !== 1) problems.push(`expected one "if (invokedAsCli(import.meta.url)) {" line, found ${guards.length}`);
-  const calls = code.match(/(?<!function )\bmain\(\)/g) ?? [];
-  if (calls.length !== 1) problems.push(`expected main() to be called once (inside the guard), found ${calls.length}`);
-  return problems;
-}

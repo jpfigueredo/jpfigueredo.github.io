@@ -109,14 +109,17 @@ jobs:
         # (setup-node only reads the version from .nvmrc.) A PR can still edit
         # this workflow itself: changes to .github/ need review.
         #
-        # Bootstrap: while the base branch has no gate yet (promotion and
-        # hotfix PRs to release/main before it gets there), the gate code of
-        # this PR must be develop's, byte for byte: every gate file (the
-        # script and the scripts/lib/ modules) must have the same mode and
-        # blob as in origin/develop, fetched in this step (shallow, develop
-        # only). Then develop's copy runs, with a warning. Any difference is
-        # exit 2: only promotions, and hotfixes that do not touch the gate,
-        # pass. Change the gate in a PR to develop first.
+        # Bootstrap: while the base branch has no gate yet (PRs to
+        # release/main until they receive it through a promotion), the gate
+        # code of this PR must be develop's, byte for byte: every gate file
+        # (the script and the scripts/lib/ modules) must have the same mode
+        # and blob as in origin/develop, fetched in this step (shallow,
+        # develop only; a failed fetch is exit 2). Then develop's copy runs,
+        # with a warning. Any difference, a missing file included, is exit 2.
+        # So until release/main receive the gate through a promotion, PRs to
+        # them pass only when their gate files are byte-identical to
+        # develop's: a hotfix branched from main does not have them and
+        # fails. Promote develop first.
         #
         # Clean environment: the gate runs under `env -i` with only
         #   PATH                 to find git, which the gate runs (rev-parse,
@@ -135,9 +138,12 @@ jobs:
         # exactly one line "Result: PASS". An exit 0 without it (a CLI guard
         # that is false, e.g. the file run from stdin or under another name,
         # exits 0 having checked nothing) is exit 2. Any other exit code is
-        # passed through. The output goes through `tee`; with `set +e` around
-        # the pipeline, the gate's exit code comes from PIPESTATUS, not from
-        # pipefail, and a `tee` failure is exit 2.
+        # passed through. The gate's stdout goes to a file, not to a pipe,
+        # and is printed with `cat` when the gate ends (stderr stays live):
+        # Node writes to a pipe asynchronously, so process.exit() would drop
+        # whatever a slow reader (the runner's log) had not taken yet, from
+        # 64 KiB on, the "Result:" line included; writes to a file are
+        # synchronous. A failing `cat` is exit 2.
         #
         # The gate imports the pure modules in scripts/lib/ (lockfile grammar,
         # output escaping); they are copied from the same commit as the gate.
@@ -166,14 +172,17 @@ jobs:
             echo "Gate code: scripts/advisory-gate.mjs (and scripts/lib/) from the base branch (HEAD^1)."
           else
             echo "Bootstrap: the base branch has no scripts/advisory-gate.mjs. This PR's gate code must be develop's."
-            git fetch --no-tags --depth=1 origin +refs/heads/develop:refs/remotes/origin/develop
+            if ! git fetch --no-tags --depth=1 origin +refs/heads/develop:refs/remotes/origin/develop; then
+              echo "::error title=advisory gate::Bootstrap: could not fetch develop to compare the gate code."
+              exit 2
+            fi
             for f in $gate_files; do
               develop_entry="$(git ls-tree refs/remotes/origin/develop -- "$f")"
               head_entry="$(git ls-tree HEAD -- "$f")"
               echo "develop: ${develop_entry:-$f missing}"
               echo "this PR: ${head_entry:-$f missing}"
               if [ -z "$develop_entry" ] || [ "$head_entry" != "$develop_entry" ]; then
-                echo "::error title=advisory gate::Bootstrap: $f in this PR is not develop's (same mode and blob). While the base branch has no gate, only promotions and hotfixes that do not touch the gate pass; change the gate in a PR to develop first."
+                echo "::error title=advisory gate::Bootstrap: $f in this PR is not develop's (same mode and blob). Until the base branch receives the gate through a promotion, PRs to it pass only when their gate files are byte-identical to develop's; promote develop first."
                 exit 2
               fi
             done
@@ -193,15 +202,15 @@ jobs:
           echo "$node_bin $("$node_bin" --version)"
           set +e
           env -i PATH="$PATH" HOME="$HOME" GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:-}" \
-            "$node_bin" "$gate_dir/advisory-gate.mjs" --mode ratchet --base HEAD^1 --head HEAD | tee "$gate_dir/output.log"
-          codes=("${PIPESTATUS[@]}")
+            "$node_bin" "$gate_dir/advisory-gate.mjs" --mode ratchet --base HEAD^1 --head HEAD > "$gate_dir/output.log"
+          code=$?
           set -e
-          if [ "${codes[1]}" -ne 0 ]; then
-            echo "::error title=advisory gate::Could not record the gate's output (tee exit ${codes[1]}), so the result is unknown."
+          if ! cat "$gate_dir/output.log"; then
+            echo "::error title=advisory gate::Could not print the gate's output, so the result is unknown."
             exit 2
           fi
-          if [ "${codes[0]}" -ne 0 ]; then
-            exit "${codes[0]}"
+          if [ "$code" -ne 0 ]; then
+            exit "$code"
           fi
           passes="$(awk '$0 == "Result: PASS" { n++ } END { print n + 0 }' "$gate_dir/output.log")"
           if [ "$passes" -ne 1 ]; then
@@ -238,13 +247,15 @@ jobs:
         #   - base has it: only the base's copies run; if the base lacks one
         #     of the three files, the step fails (exit 2) instead of falling
         #     back to the PR's copy;
-        #   - base does not have it (promotion and hotfix PRs to release/main
-        #     until the gate gets there): the three files of this PR must be
-        #     develop's, same mode and blob as in origin/develop, fetched in
-        #     this step (shallow, develop only); then develop's copies run,
-        #     with a warning. Any difference is exit 2: only promotions, and
-        #     hotfixes that do not touch the gate, pass. Change the gate in a
-        #     PR to develop first. Those branches also have no Cargo.lock: a
+        #   - base does not have it (PRs to release/main until they receive
+        #     the gate through a promotion): the three files of this PR must
+        #     be develop's, same mode and blob as in origin/develop, fetched
+        #     in this step (shallow, develop only; a failed fetch is exit 2);
+        #     then develop's copies run, with a warning. Any difference, a
+        #     missing file included, is exit 2: until then, PRs to
+        #     release/main pass only when their gate files are byte-identical
+        #     to develop's (a hotfix branched from main fails). Promote
+        #     develop first. Those branches also have no Cargo.lock: a
         #     lockfile missing in the base counts as empty, so every crate of
         #     the head is checked.
         # ("The base has the script" cannot be the test: lock-entry-ages.mjs
@@ -274,14 +285,17 @@ jobs:
             echo "Gate code: $gate_files from the base branch (HEAD^1), which has security/lock-age-allowlist.json."
           else
             echo "Bootstrap: the base branch has no security/lock-age-allowlist.json. This PR's gate code must be develop's."
-            git fetch --no-tags --depth=1 origin +refs/heads/develop:refs/remotes/origin/develop
+            if ! git fetch --no-tags --depth=1 origin +refs/heads/develop:refs/remotes/origin/develop; then
+              echo "::error title=lock age gate::Bootstrap: could not fetch develop to compare the gate code."
+              exit 2
+            fi
             for f in $gate_files; do
               develop_entry="$(git ls-tree refs/remotes/origin/develop -- "$f")"
               head_entry="$(git ls-tree HEAD -- "$f")"
               echo "develop: ${develop_entry:-$f missing}"
               echo "this PR: ${head_entry:-$f missing}"
               if [ -z "$develop_entry" ] || [ "$head_entry" != "$develop_entry" ]; then
-                echo "::error title=lock age gate::Bootstrap: $f in this PR is not develop's (same mode and blob). While the base branch has no lock age gate, only promotions and hotfixes that do not touch the gate pass; change the gate in a PR to develop first."
+                echo "::error title=lock age gate::Bootstrap: $f in this PR is not develop's (same mode and blob). Until the base branch receives the lock age gate through a promotion, PRs to it pass only when their gate files are byte-identical to develop's; promote develop first."
                 exit 2
               fi
             done
@@ -302,15 +316,15 @@ jobs:
           echo "$node_bin $("$node_bin" --version)"
           set +e
           env -i PATH="$PATH" HOME="$HOME" GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:-}" \
-            "$node_bin" "$gate_dir/lock-entry-ages.mjs" --base HEAD^1 --head HEAD | tee "$gate_dir/output.log"
-          codes=("${PIPESTATUS[@]}")
+            "$node_bin" "$gate_dir/lock-entry-ages.mjs" --base HEAD^1 --head HEAD > "$gate_dir/output.log"
+          code=$?
           set -e
-          if [ "${codes[1]}" -ne 0 ]; then
-            echo "::error title=lock age gate::Could not record the gate's output (tee exit ${codes[1]}), so the result is unknown."
+          if ! cat "$gate_dir/output.log"; then
+            echo "::error title=lock age gate::Could not print the gate's output, so the result is unknown."
             exit 2
           fi
-          if [ "${codes[0]}" -ne 0 ]; then
-            exit "${codes[0]}"
+          if [ "$code" -ne 0 ]; then
+            exit "$code"
           fi
           passes="$(awk '$0 == "Result: PASS" { n++ } END { print n + 0 }' "$gate_dir/output.log")"
           if [ "$passes" -ne 1 ]; then
@@ -343,7 +357,7 @@ jobs:
         # network: git, the registries and the clock are faked), same rules
         # as the advisory gate self-test. Raise the number when you add tests.
         env:
-          LOCK_AGE_GATE_MIN_TESTS: "82"
+          LOCK_AGE_GATE_MIN_TESTS: "83"
         run: |
           node --test --test-reporter=tap scripts/lock-entry-ages.test.mjs scripts/lock-entry-ages.edges.test.mjs | tee "$RUNNER_TEMP/lock-age-gate-tests.tap"
           count() { sed -n "s/^# $1 \([0-9][0-9]*\)$/\1/p" "$RUNNER_TEMP/lock-age-gate-tests.tap"; }

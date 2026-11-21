@@ -12,6 +12,7 @@ import { describe, it } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { GateError } from './lib/lockfile-grammar.mjs';
 import { EXCEPTIONS_PATH, MAX_EXCEPTION_DAYS, MIN_AGE_MS, USER_AGENT, invokedAsCli, parseExceptions, run } from './lock-entry-ages.mjs';
+import { GATE_IMPORTS, LIB_IMPORTS, gateSourceProblems } from './gate-source.testlib.mjs';
 
 const SCRIPTS = dirname(fileURLToPath(import.meta.url));
 
@@ -516,9 +517,9 @@ describe('CLI (child process)', () => {
       const res = spawnSync(process.execPath, [join(SCRIPTS, 'lock-entry-ages.mjs'), '--base', 'base', '--head', 'HEAD'], { cwd: dir, encoding: 'utf8', env: { ...process.env, GITHUB_STEP_SUMMARY: '' } });
       assert.equal(res.status, 0, res.stdout + res.stderr);
       assert.match(res.stdout, /^yarn\.lock: 0 new name@version entries$/m);
-      assert.match(res.stdout, /^Result: PASS$/m);
       assert.doesNotMatch(res.stdout + res.stderr, /OSV|Advisories|advisory gate/i);
-      assert.equal(res.stdout.match(/^Result:/gm).length, 1);
+      assert.deepEqual(res.stdout.match(/^Result:.*$/gm), ['Result: PASS']);
+      assert.match(res.stdout, /\nResult: PASS\n$/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -573,12 +574,28 @@ describe('CLI (child process)', () => {
   });
 
   it('gate sources: no import.meta other than .url; imports only node: and ./lib/ (lib: node: and its siblings)', () => {
-    assert.deepEqual(gateSourceProblems(readFileSync(join(SCRIPTS, 'lock-entry-ages.mjs'), 'utf8'), /^(?:node:[a-z_/]+|\.\/lib\/[a-z-]+\.mjs)$/), []);
+    assert.deepEqual(gateSourceProblems(readFileSync(join(SCRIPTS, 'lock-entry-ages.mjs'), 'utf8'), GATE_IMPORTS), []);
     const libs = readdirSync(join(SCRIPTS, 'lib')).filter((f) => f.endsWith('.mjs'));
     assert.ok(libs.length >= 2, libs.join());
     for (const f of libs) {
-      assert.deepEqual(gateSourceProblems(readFileSync(join(SCRIPTS, 'lib', f), 'utf8'), /^(?:node:[a-z_/]+|\.\/[a-z-]+\.mjs)$/, { cli: false }), [], f);
+      assert.deepEqual(gateSourceProblems(readFileSync(join(SCRIPTS, 'lib', f), 'utf8'), LIB_IMPORTS, { cli: false }), [], f);
     }
+  });
+
+  it('the static check flags bad imports and guards, not strings that look like imports', () => {
+    const guard = "if (invokedAsCli(import.meta.url)) {\n  main();\n}\n";
+    const ok = "import { a } from './lib/gate-report.mjs';\nexport function f() { return `copied from 'develop'`; }\nconst g = { base: 'origin/develop' }; // from 'develop'\n" + guard;
+    assert.deepEqual(gateSourceProblems(ok, GATE_IMPORTS), []);
+    for (const [bad, re] of [
+      ["import { parseCargoLock } from './advisory-gate.mjs';\n", /imports \.\/advisory-gate\.mjs/],
+      ["export * from '../evil.mjs';\n", /imports \.\.\/evil\.mjs/],
+      ["import {\n  a,\n} from 'fs';\n", /imports fs/],
+      ["await import('./advisory-gate.mjs');\n", /dynamic import/],
+      ["if (import.meta.main !== false) main();\n", /import\.meta/],
+    ]) {
+      assert.ok(gateSourceProblems(bad + guard, GATE_IMPORTS).some((p) => re.test(p)), bad);
+    }
+    assert.ok(gateSourceProblems("if (import.meta.main) {\n  main();\n}\n", GATE_IMPORTS).some((p) => /expected one "if \(invokedAsCli/.test(p)));
   });
 
   it('importing either gate runs no CLI; running either by path does', () => {
@@ -600,33 +617,3 @@ describe('CLI (child process)', () => {
     }
   });
 });
-
-// Static checks of a gate's source (comment lines dropped): CI copies the
-// gate and scripts/lib/ from the base branch and nothing else, and the CLI
-// must start only through invokedAsCli(import.meta.url), never through
-// import.meta.main (unset before Node 22.18/24.2, so a guard on it ran the CLI
-// on import). Same checks as in advisory-gate.test.mjs. Returns a list of
-// problems.
-function gateSourceProblems(source, allowedSpecifier, { cli = true } = {}) {
-  const code = source
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('\n')
-    .filter((line) => !/^\s*\/\//.test(line))
-    .join('\n');
-  const problems = [];
-  for (const m of code.matchAll(/\bimport\s*\.\s*meta\b(?!\s*\.\s*url\b)/g)) problems.push(`uses ${m[0]} other than import.meta.url`);
-  for (const m of code.matchAll(/\bimport\s*\(|\brequire\s*\(|\bcreateRequire\b|\bprocess\.binding\b/g)) problems.push(`dynamic import or require: ${m[0]}`);
-  for (const m of code.matchAll(/^\s*(?:import|export)\b[^;]*?\bfrom\s*(['"])([^'"]*)\1|^\s*import\s*(['"])([^'"]*)\3/gm)) {
-    const specifier = m[2] ?? m[4];
-    if (!allowedSpecifier.test(specifier)) problems.push(`imports ${specifier}`);
-  }
-  const guards = code.match(/^if \(invokedAsCli\(import\.meta\.url\)\) \{$/gm) ?? [];
-  const calls = code.match(/(?<!function )\bmain\(\)/g) ?? [];
-  if (cli) {
-    if (guards.length !== 1) problems.push(`expected one "if (invokedAsCli(import.meta.url)) {" line, found ${guards.length}`);
-    if (calls.length !== 1) problems.push(`expected main() to be called once (inside the guard), found ${calls.length}`);
-  } else if (guards.length || calls.length || /\bprocess\.exit\b/.test(code)) {
-    problems.push('a lib module must not have a CLI entry point');
-  }
-  return problems;
-}
