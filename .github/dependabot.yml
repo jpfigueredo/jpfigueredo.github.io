@@ -13,8 +13,10 @@
 #   - weekly, on Monday 09:00 UTC;
 #   - cooldown of 7 days. It only covers the version of the dependency the
 #     PR is about. Transitive versions that come with it in yarn.lock, and
-#     Cargo lockfile-only updates, can be much younger; check them with
-#     `node scripts/lock-entry-ages.mjs`. Security updates are not delayed;
+#     Cargo lockfile-only updates, can be much younger; the lockfile entry
+#     age gate in ci.yml (scripts/lock-entry-ages.mjs) fails a PR that adds
+#     any version younger than 7 days. Security updates are not delayed by
+#     Dependabot; a young one needs an exception (CONTRIBUTING.md);
 #   - minor and patch updates are grouped into one PR per group; major
 #     updates come one dependency per PR, so a breaking change is reviewed
 #     on its own;
