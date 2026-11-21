@@ -4,7 +4,7 @@
     "title": "Sistemas Distribuídos & Arquitetura de Software",
     "roles": ["software-architect", "backend-developer"],
     "tags": ["distributed-systems", "software-architecture"],
-    "provenance": "Linhagem raiz→fronteira cruzada com listas de referência conhecidas (Demirbas, dancres, awesome-distributed-systems, mixu.net). URLs de fonte livre de hosts oficiais (autor/instituição), coletadas via busca em 2026-08-22 e sujeitas ao verify-sources no CI. Arestas: procedência 'curada'; ownership resolvido em runtime."
+    "provenance": "Linhagem raiz→fronteira cruzada com listas de referência conhecidas (Demirbas, dancres, awesome-distributed-systems, mixu.net). URLs de versões abertas publicadas por autores e instituições, quando existem, coletadas via busca em 2026-08-22; os links não passam por verificação automática. Arestas: procedência 'curada'; ownership resolvido em runtime."
   },
   "nodes": [
     { "id": "turing-1936", "type": "paper", "label": "On Computable Numbers, with an Application to the Entscheidungsproblem", "author": "A. M. Turing", "year": 1936, "tags": ["foundations", "computation"],
