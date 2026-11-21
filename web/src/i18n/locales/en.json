@@ -8,7 +8,7 @@
   "nav": {
     "home": "Home",
     "goom64": "GOOM64",
-    "swTimeline": "Ohara",
+    "ohara": "Ohara",
     "kafkaViz": "Kafka Viz"
   },
   "home": {
@@ -17,14 +17,14 @@
       "title": "GOOM64",
       "description": "A remake of the classic DOOM64 game developed in Go and compiled to WebAssembly. Demonstrates skills in systems programming, performance optimization, and game development."
     },
-    "swTimeline": {
+    "ohara": {
       "title": "Ohara",
-      "description": "Interactive Software Engineering timeline connecting patterns, anti-patterns, and paradigms through primary sources and constellation visualizations.",
-      "blurb": "Born from a simple question: where does each idea in software actually come from? Ohara maps the genealogy of computing as a directed acyclic graph of primary sources — from Turing (1936) to modern distributed systems — turning scattered papers into guided study trails.",
+      "blurb": "Born from a simple question: where does each idea in computing actually come from? Ohara arranges reference works by lineage of ideas, in a curated reading graph — from Turing (1936) to modern distributed systems — and turns scattered readings into guided study trails.",
       "highlights": [
-        "Topological sort with cycle detection over the citation graph",
-        "Verified primary sources only — provenance-labeled, never invented",
-        "Accessible & responsive: keyboard-navigable nodes, reduced-motion aware",
+        "Topological ordering of a curated graph of reference readings",
+        "Every connection carries a provenance label; today all of them come from curation",
+        "Links to open versions hosted by authors and institutions, where they exist",
+        "Keyboard-navigable nodes",
         "Decoupled by design: external-configuration pattern, tested with Vitest"
       ]
     },
@@ -66,20 +66,9 @@
     "subtitle": "(Go + WASM)",
     "description": "A remake of the classic DOOM64 game developed in Go and compiled to WebAssembly. Demonstrates skills in systems programming and performance optimization."
   },
-  "swTimeline": {
+  "ohara": {
     "title": "Ohara",
-    "description": "Interactive Software Engineering timeline.",
-    "underConstruction": {
-      "badge": "Under construction",
-      "message": "This visualization is undergoing a deep UI/UX and graphics engine refactor. It will be back soon with the performance, visuals, and interactions I expect.",
-      "submessage": "In the meantime, browse other projects in the sidebar menu."
-    },
-    "techStack": {
-      "title": "Tech stack",
-      "line1": "Three.js (WebGL) · TypeScript · Vite",
-      "line2": "React (UI overlay) · Tailwind CSS",
-      "line3": "Static deployment with"
-    }
+    "description": "Reading trails through reference works, organized by lineage of ideas."
   },
   "kafkaViz": {
     "title": "Kafka Viz",

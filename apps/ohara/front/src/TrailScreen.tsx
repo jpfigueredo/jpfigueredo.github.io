@@ -5,7 +5,7 @@ import { TrailCanvas } from './components/TrailCanvas';
 import { NodeModal } from './components/NodeModal';
 import type { TrailNode } from './types';
 
-export function TrailScreen({ trailId, onBack }: { trailId: string; onBack: () => void }) {
+export function TrailScreen({ trailId, onBack }: { trailId: string; onBack?: () => void }) {
   const trail = useMemo(() => loadTrail(trailId), [trailId]);
   const layout = useMemo(() => buildLayout(trail), [trail]);
   const byId = useMemo(() => new Map(trail.nodes.map((n) => [n.id, n])), [trail]);
@@ -14,10 +14,12 @@ export function TrailScreen({ trailId, onBack }: { trailId: string; onBack: () =
   return (
     <>
       <header className="app-head">
-        <button type="button" className="app-head__back" onClick={onBack}>
-          ← trilhas
-        </button>
-        <p className="app-head__eyebrow">Trilha de leitura · fontes primárias</p>
+        {onBack ? (
+          <button type="button" className="app-head__back" onClick={onBack}>
+            ← trilhas
+          </button>
+        ) : null}
+        <p className="app-head__eyebrow">Trilha de leitura · obras de referência</p>
         <h1 className="app-head__title">{trail.trail.title}</h1>
         <p className="app-head__meta">
           {trail.nodes.length} obras · {trail.edges.length} conexões · raízes → fronteira
