@@ -103,11 +103,6 @@
   transform: translateY(-4px);
   border-left-color: var(--amber);
 }
-.trail-card--soon {
-  opacity: 0.6;
-  cursor: not-allowed;
-  border-left-color: var(--border);
-}
 .trail-card__title {
   font-size: 1.15rem;
   font-weight: 700;
@@ -121,19 +116,6 @@
   font-size: 0.8rem;
   color: var(--brass);
   margin-top: 6px;
-}
-.trail-card__badge {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 2px 7px;
 }
 
 /* ---------- canvas / DAG ---------- */

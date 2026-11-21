@@ -44,13 +44,15 @@ jpfigueredo.github.io/
   - Cross-platform game development
 - **Live Demo:** [GOOM64 Game](https://jpfigueredo.github.io/projects/goom64)
 
-### 2. **SW Timeline** 📊
-- **Technology:** React + D3.js/Three.js
-- **Description:** Interactive Software Engineering timeline connecting patterns, anti-patterns, and paradigms
+### 2. **Ohara** 📚
+- **Technology:** React + TypeScript
+- **Description:** Reading trails through reference works, organized by lineage of ideas
 - **Features:**
-  - Constellation-like visualizations
-  - Primary source citations
-  - Interactive knowledge mapping
+  - Topological ordering of a curated graph of reference readings
+  - Every connection carries a provenance label; today all of them come from curation
+  - Links to open versions hosted by authors and institutions, where they exist
+  - Keyboard-navigable nodes
+  - Decoupled by design: external-configuration pattern, tested with Vitest
 - **Live Demo:** [Ohara](https://jpfigueredo.github.io/projects/ohara)
 
 ## 🛠️ Tech Stack
@@ -149,7 +151,7 @@ yarn test           # Tests (turbo run test)
 ### Sub-Applications (`apps/`)
 Each application is built independently and embedded via iframe:
 - **GOOM64** - Game development showcase
-- **SW Timeline** - Data visualization project
+- **Ohara** - Reading trails through reference works
 
 ### Shared Packages (`packages/`)
 - **UI Components** - Reusable React components

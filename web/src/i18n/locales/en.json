@@ -22,8 +22,8 @@
       "blurb": "Born from a simple question: where does each idea in computing actually come from? Ohara arranges reference works by lineage of ideas, in a curated reading graph — from Turing (1936) to modern distributed systems — and turns scattered readings into guided study trails.",
       "highlights": [
         "Topological ordering of a curated graph of reference readings",
-        "Every link carries a provenance label; today all of them come from curation",
-        "Links to open versions published by authors and institutions, where they exist",
+        "Every connection carries a provenance label; today all of them come from curation",
+        "Links to open versions hosted by authors and institutions, where they exist",
         "Keyboard-navigable nodes",
         "Decoupled by design: external-configuration pattern, tested with Vitest"
       ]

@@ -590,11 +590,17 @@ const Docs = () => (
   </MainLayout>
 );
 
+// Endereço antigo da página do Ohara: redireciona mantendo query e âncora,
+// para os links existentes continuarem funcionando.
+const LegacyOharaRedirect = () => {
+  const { search, hash } = useLocation();
+  return <Navigate to={{ pathname: '/projects/ohara', search, hash }} replace />;
+};
+
 const router = createBrowserRouter([
   { path: '/', element: <Home /> },
   { path: '/projects/ohara', element: <OharaPage /> },
-  // Endereço antigo da página do Ohara: mantém os links existentes funcionando.
-  { path: '/projects/sw-timeline', element: <Navigate to="/projects/ohara" replace /> },
+  { path: '/projects/sw-timeline', element: <LegacyOharaRedirect /> },
   { path: '/projects/kafka-viz', element: <KafkaVizPage /> },
   { path: '/docs', element: <Docs /> }
 ]);

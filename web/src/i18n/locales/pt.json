@@ -23,7 +23,7 @@
       "highlights": [
         "Ordenação topológica de um grafo curado de leituras de referência",
         "Cada ligação tem procedência rotulada; hoje todas vêm de curadoria",
-        "Links para versões abertas publicadas por autores e instituições, quando existem",
+        "Links para versões abertas hospedadas por autores e instituições, quando existem",
         "Nós navegáveis por teclado",
         "Desacoplado por design: external-configuration pattern, testado com Vitest"
       ]
