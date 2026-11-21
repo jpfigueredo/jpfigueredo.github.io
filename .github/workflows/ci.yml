@@ -71,7 +71,11 @@ jobs:
           node-version-file: .nvmrc
           # No dependency cache on purpose: a pull_request run can only save
           # cache for its own ref, so new PRs never hit it, and each entry is
-          # ~1.3 GB of the repo's 10 GB cache quota.
+          # ~1.3 GB of the repo's 10 GB cache quota. Explicitly off: v5+
+          # turns the cache on by itself when package.json's packageManager
+          # (or devEngines.packageManager) names npm, and package.json is the
+          # PR's. Today it names yarn, so nothing changes.
+          package-manager-cache: false
 
       - name: Dependency advisories (OSV, gate code from the base branch)
         # Checks every version in yarn.lock and services/rust-api/Cargo.lock
@@ -105,9 +109,35 @@ jobs:
         # (setup-node only reads the version from .nvmrc.) A PR can still edit
         # this workflow itself: changes to .github/ need review.
         #
-        # Bootstrap: while the base branch has no gate yet (the PR that adds
-        # it, or a promotion PR to release/main before it gets there), the
-        # PR's copy runs, with a warning.
+        # Bootstrap: while the base branch has no gate yet (promotion and
+        # hotfix PRs to release/main before it gets there), the gate code of
+        # this PR must be develop's, byte for byte: every gate file (the
+        # script and the scripts/lib/ modules) must have the same mode and
+        # blob as in origin/develop, fetched in this step (shallow, develop
+        # only). Then develop's copy runs, with a warning. Any difference is
+        # exit 2: only promotions, and hotfixes that do not touch the gate,
+        # pass. Change the gate in a PR to develop first.
+        #
+        # Clean environment: the gate runs under `env -i` with only
+        #   PATH                 to find git, which the gate runs (rev-parse,
+        #                        ls-tree, show);
+        #   HOME                 git's global config ($HOME/.gitconfig), as
+        #                        for every other git command of this job;
+        #   GITHUB_STEP_SUMMARY  where the gate writes its Markdown report.
+        # Nothing else of the job's environment reaches it: no NODE_OPTIONS
+        # (preloaded code), NODE_TLS_REJECT_UNAUTHORIZED, NODE_EXTRA_CA_CERTS,
+        # SSL_CERT_*, HTTP(S)_PROXY or NODE_USE_ENV_PROXY (who answers for
+        # OSV), GIT_* (another repository or git config). RUNNER_TEMP is not
+        # passed: the gate writes no temporary files (this script uses it, the
+        # gate does not).
+        #
+        # Positive proof: exit 0 is a pass only if the gate's output has
+        # exactly one line "Result: PASS". An exit 0 without it (a CLI guard
+        # that is false, e.g. the file run from stdin or under another name,
+        # exits 0 having checked nothing) is exit 2. Any other exit code is
+        # passed through. The output goes through `tee`; with `set +e` around
+        # the pipeline, the gate's exit code comes from PIPESTATUS, not from
+        # pipefail, and a `tee` failure is exit 2.
         #
         # The gate imports the pure modules in scripts/lib/ (lockfile grammar,
         # output escaping); they are copied from the same commit as the gate.
@@ -130,12 +160,25 @@ jobs:
           git log -1 --format='head (HEAD):   %H %s' HEAD
           gate_dir="$RUNNER_TEMP/advisory-gate"
           mkdir -p "$gate_dir/lib"
+          gate_files="scripts/advisory-gate.mjs scripts/lib/lockfile-grammar.mjs scripts/lib/gate-report.mjs"
           if [ -n "$(git ls-tree --name-only HEAD^1 -- scripts/advisory-gate.mjs)" ]; then
             gate_ref=HEAD^1
             echo "Gate code: scripts/advisory-gate.mjs (and scripts/lib/) from the base branch (HEAD^1)."
           else
-            gate_ref=HEAD
-            echo "::warning title=advisory gate::The base branch has no scripts/advisory-gate.mjs yet, so this run uses this PR's copy. Once the base has it, the base copy runs."
+            echo "Bootstrap: the base branch has no scripts/advisory-gate.mjs. This PR's gate code must be develop's."
+            git fetch --no-tags --depth=1 origin +refs/heads/develop:refs/remotes/origin/develop
+            for f in $gate_files; do
+              develop_entry="$(git ls-tree refs/remotes/origin/develop -- "$f")"
+              head_entry="$(git ls-tree HEAD -- "$f")"
+              echo "develop: ${develop_entry:-$f missing}"
+              echo "this PR: ${head_entry:-$f missing}"
+              if [ -z "$develop_entry" ] || [ "$head_entry" != "$develop_entry" ]; then
+                echo "::error title=advisory gate::Bootstrap: $f in this PR is not develop's (same mode and blob). While the base branch has no gate, only promotions and hotfixes that do not touch the gate pass; change the gate in a PR to develop first."
+                exit 2
+              fi
+            done
+            gate_ref=refs/remotes/origin/develop
+            echo "::warning title=advisory gate::The base branch has no scripts/advisory-gate.mjs yet, so this run uses develop's copy (identical to this PR's). Once the base has it, the base copy runs."
           fi
           git show --no-textconv "$gate_ref:scripts/advisory-gate.mjs" > "$gate_dir/advisory-gate.mjs"
           for f in scripts/lib/lockfile-grammar.mjs scripts/lib/gate-report.mjs; do
@@ -146,8 +189,25 @@ jobs:
             fi
           done
           find "$gate_dir" -type f -name '*.mjs' -exec sha256sum {} +
-          node --version
-          env -u NODE_OPTIONS node "$gate_dir/advisory-gate.mjs" --mode ratchet --base HEAD^1 --head HEAD
+          node_bin="$(command -v node)"
+          echo "$node_bin $("$node_bin" --version)"
+          set +e
+          env -i PATH="$PATH" HOME="$HOME" GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:-}" \
+            "$node_bin" "$gate_dir/advisory-gate.mjs" --mode ratchet --base HEAD^1 --head HEAD | tee "$gate_dir/output.log"
+          codes=("${PIPESTATUS[@]}")
+          set -e
+          if [ "${codes[1]}" -ne 0 ]; then
+            echo "::error title=advisory gate::Could not record the gate's output (tee exit ${codes[1]}), so the result is unknown."
+            exit 2
+          fi
+          if [ "${codes[0]}" -ne 0 ]; then
+            exit "${codes[0]}"
+          fi
+          passes="$(awk '$0 == "Result: PASS" { n++ } END { print n + 0 }' "$gate_dir/output.log")"
+          if [ "$passes" -ne 1 ]; then
+            echo "::error title=advisory gate::The gate exited 0 but printed $passes \"Result: PASS\" lines (exactly 1 expected), so it did not prove it checked anything. Not a pass."
+            exit 2
+          fi
 
       - name: Lockfile entry age (minimum 7 days, gate code from the base branch)
         if: ${{ !cancelled() }}
@@ -173,22 +233,32 @@ jobs:
         #
         # Bootstrap, narrow on purpose. The marker is the base branch having
         # security/lock-age-allowlist.json (created with this gate; deleting
-        # it needs a code owner's review):
+        # it needs a code owner's review, and the gate fails a PR that
+        # deletes it, exit 1):
         #   - base has it: only the base's copies run; if the base lacks one
         #     of the three files, the step fails (exit 2) instead of falling
         #     back to the PR's copy;
-        #   - base does not have it: the PR's copies run, with a warning. That
-        #     is the PR that adds the gate, and promotion PRs to release/main
-        #     until the gate gets there. Those branches also have no
-        #     Cargo.lock: a lockfile missing in the base counts as empty, so
-        #     every crate of the head is checked.
+        #   - base does not have it (promotion and hotfix PRs to release/main
+        #     until the gate gets there): the three files of this PR must be
+        #     develop's, same mode and blob as in origin/develop, fetched in
+        #     this step (shallow, develop only); then develop's copies run,
+        #     with a warning. Any difference is exit 2: only promotions, and
+        #     hotfixes that do not touch the gate, pass. Change the gate in a
+        #     PR to develop first. Those branches also have no Cargo.lock: a
+        #     lockfile missing in the base counts as empty, so every crate of
+        #     the head is checked.
         # ("The base has the script" cannot be the test: lock-entry-ages.mjs
         # existed before as a manual tool. A grep of the base's ci.yml was
         # not used either: a rewrite of the workflow would silently reopen
         # the bootstrap.)
         #
-        # Setup problems (no merge commit, missing gate code) exit 2, like the
-        # gate's own "could not run".
+        # Clean environment and positive proof: as in the advisory gate above
+        # (`env -i` with PATH, HOME and GITHUB_STEP_SUMMARY only; exit 0 is a
+        # pass only with exactly one "Result: PASS" line, else exit 2).
+        #
+        # Setup problems (no merge commit, missing gate code, bootstrap gate
+        # code that is not develop's) exit 2, like the gate's own "could not
+        # run".
         run: |
           if [ "$(git rev-list --parents -n 1 HEAD | wc -w)" -ne 3 ]; then
             echo "::error title=lock age gate::HEAD is not a PR merge commit, so the base branch is unknown."
@@ -203,8 +273,20 @@ jobs:
             gate_ref=HEAD^1
             echo "Gate code: $gate_files from the base branch (HEAD^1), which has security/lock-age-allowlist.json."
           else
-            gate_ref=HEAD
-            echo "::warning title=lock age gate::Bootstrap: the base branch has no security/lock-age-allowlist.json (no lock age gate yet), so this run uses this PR's copy of $gate_files. Once the base has that file, only the base copy runs."
+            echo "Bootstrap: the base branch has no security/lock-age-allowlist.json. This PR's gate code must be develop's."
+            git fetch --no-tags --depth=1 origin +refs/heads/develop:refs/remotes/origin/develop
+            for f in $gate_files; do
+              develop_entry="$(git ls-tree refs/remotes/origin/develop -- "$f")"
+              head_entry="$(git ls-tree HEAD -- "$f")"
+              echo "develop: ${develop_entry:-$f missing}"
+              echo "this PR: ${head_entry:-$f missing}"
+              if [ -z "$develop_entry" ] || [ "$head_entry" != "$develop_entry" ]; then
+                echo "::error title=lock age gate::Bootstrap: $f in this PR is not develop's (same mode and blob). While the base branch has no lock age gate, only promotions and hotfixes that do not touch the gate pass; change the gate in a PR to develop first."
+                exit 2
+              fi
+            done
+            gate_ref=refs/remotes/origin/develop
+            echo "::warning title=lock age gate::Bootstrap: the base branch has no security/lock-age-allowlist.json (no lock age gate yet), so this run uses develop's copy of $gate_files (identical to this PR's). Once the base has that file, only the base copy runs."
           fi
           for f in $gate_files; do
             if [ -z "$(git ls-tree --name-only "$gate_ref" -- "$f")" ]; then
@@ -216,8 +298,25 @@ jobs:
           git show --no-textconv "$gate_ref:scripts/lib/lockfile-grammar.mjs" > "$gate_dir/lib/lockfile-grammar.mjs"
           git show --no-textconv "$gate_ref:scripts/lib/gate-report.mjs" > "$gate_dir/lib/gate-report.mjs"
           sha256sum "$gate_dir/lock-entry-ages.mjs" "$gate_dir/lib/lockfile-grammar.mjs" "$gate_dir/lib/gate-report.mjs"
-          node --version
-          env -u NODE_OPTIONS node "$gate_dir/lock-entry-ages.mjs" --base HEAD^1 --head HEAD
+          node_bin="$(command -v node)"
+          echo "$node_bin $("$node_bin" --version)"
+          set +e
+          env -i PATH="$PATH" HOME="$HOME" GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:-}" \
+            "$node_bin" "$gate_dir/lock-entry-ages.mjs" --base HEAD^1 --head HEAD | tee "$gate_dir/output.log"
+          codes=("${PIPESTATUS[@]}")
+          set -e
+          if [ "${codes[1]}" -ne 0 ]; then
+            echo "::error title=lock age gate::Could not record the gate's output (tee exit ${codes[1]}), so the result is unknown."
+            exit 2
+          fi
+          if [ "${codes[0]}" -ne 0 ]; then
+            exit "${codes[0]}"
+          fi
+          passes="$(awk '$0 == "Result: PASS" { n++ } END { print n + 0 }' "$gate_dir/output.log")"
+          if [ "$passes" -ne 1 ]; then
+            echo "::error title=lock age gate::The gate exited 0 but printed $passes \"Result: PASS\" lines (exactly 1 expected), so it did not prove it checked anything. Not a pass."
+            exit 2
+          fi
 
       - name: Advisory gate self-test
         if: ${{ !cancelled() }}
@@ -227,7 +326,7 @@ jobs:
         # any test is skipped or todo (an emptied test file would pass
         # `node --test`). Raise the number when you add tests.
         env:
-          ADVISORY_GATE_MIN_TESTS: "67"
+          ADVISORY_GATE_MIN_TESTS: "70"
         run: |
           node --test --test-reporter=tap scripts/advisory-gate.test.mjs | tee "$RUNNER_TEMP/advisory-gate-tests.tap"
           count() { sed -n "s/^# $1 \([0-9][0-9]*\)$/\1/p" "$RUNNER_TEMP/advisory-gate-tests.tap"; }
@@ -244,7 +343,7 @@ jobs:
         # network: git, the registries and the clock are faked), same rules
         # as the advisory gate self-test. Raise the number when you add tests.
         env:
-          LOCK_AGE_GATE_MIN_TESTS: "77"
+          LOCK_AGE_GATE_MIN_TESTS: "82"
         run: |
           node --test --test-reporter=tap scripts/lock-entry-ages.test.mjs scripts/lock-entry-ages.edges.test.mjs | tee "$RUNNER_TEMP/lock-age-gate-tests.tap"
           count() { sed -n "s/^# $1 \([0-9][0-9]*\)$/\1/p" "$RUNNER_TEMP/lock-age-gate-tests.tap"; }
