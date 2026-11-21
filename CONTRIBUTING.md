@@ -103,7 +103,9 @@ Minor and patch updates are grouped; each major update is its own PR.
 Cooldown: Dependabot waits 7 days after a release before proposing it, but
 only for the dependency the PR is about. Transitive versions pulled into
 `yarn.lock` with it, and Cargo lockfile-only updates, can be hours old.
-Security updates skip the cooldown on purpose.
+Security updates skip the cooldown on purpose. PR CI closes that gap: the
+lockfile entry age gate fails any PR that adds a version younger than 7 days
+(see "Lockfile entry age" below).
 
 Nothing is merged automatically. A Dependabot PR gets the same review as any
 other PR, plus the checks below.
@@ -112,7 +114,12 @@ other PR, plus the checks below.
 gh pr view <n> --json author,headRefName,isCrossRepository
 git fetch origin develop "+pull/<n>/head:dependabot-<n>"
 git diff --stat origin/develop...dependabot-<n>
-node scripts/lock-entry-ages.mjs --head dependabot-<n>
+# Age gate, develop's copy (never the PR branch's): both files, because
+# lock-entry-ages.mjs imports the lockfile parser from advisory-gate.mjs.
+gate="$(mktemp -d)"
+git show origin/develop:scripts/lock-entry-ages.mjs > "$gate/lock-entry-ages.mjs"
+git show origin/develop:scripts/advisory-gate.mjs > "$gate/advisory-gate.mjs"
+node "$gate/lock-entry-ages.mjs" --base origin/develop --head dependabot-<n>
 ```
 
 1. **Author.** `author.login` is `app/dependabot`, `headRefName` starts with
@@ -145,12 +152,14 @@ node scripts/lock-entry-ages.mjs --head dependabot-<n>
      # -> ahead or identical
      ```
 
-4. **Age.** `node scripts/lock-entry-ages.mjs --head dependabot-<n>` lists
-   every new version in `yarn.lock` and `Cargo.lock`, direct or transitive,
-   with its publish date, and exits non-zero if one is younger than 7 days or
-   could not be looked up. For actions use
+4. **Age.** Automatic: the "Lockfile entry age" step of `node-checks` fails
+   if any new version in `yarn.lock` or `Cargo.lock`, direct or transitive,
+   is younger than 7 days or could not be looked up. To see the table
+   locally, run develop's copy as above (not the PR branch's: a PR can edit
+   the script). For actions, which the gate does not cover, use
    `gh release view <tag> -R <owner>/<action> --json publishedAt`. A security
-   update can be younger: read the advisory linked in the PR instead.
+   update can be younger: read the advisory linked in the PR, and if it cannot
+   wait, add an exception (see "Lockfile entry age").
 5. **Provenance (npm).** For each package the PR updates directly:
    `node scripts/npm-release-facts.mjs <package> <old-version> <new-version>`.
    It reads `https://registry.npmjs.org/<package>/<version>` (`_npmUser`,
@@ -171,8 +180,9 @@ node scripts/lock-entry-ages.mjs --head dependabot-<n>
    (`edge-proxy.yml`). For these, read the full diff between the old and new
    SHA or version, including the built `dist/` of an action, before merging.
 8. **CI.** `node-checks` and `rust-checks` are green, `rust-checks` actually
-   built Rust for Cargo and Docker PRs, and the advisory gate reports no new
-   advisories (see "Dependency advisories" below). Dependabot PRs run CI with a read-only token and no
+   built Rust for Cargo and Docker PRs, the advisory gate reports no new
+   advisories (see "Dependency advisories" below) and the lockfile entry age
+   gate passed without a new exception you did not approve. Dependabot PRs run CI with a read-only token and no
    secrets, like a pull request from a fork. To try the branch locally, never
    run lifecycle scripts: `yarn install --ignore-scripts`, as CI does.
 9. **Merge.** Squash into `develop`, by hand. To refresh a Dependabot branch,
@@ -266,3 +276,53 @@ affect this project, in VEX terms, with a date to look at it again:
 Severity comes from the OSV record: GitHub's label (`database_specific.severity`)
 when there is one, else the CVSS v3 base score, else `info` for RustSec
 informational advisories (unmaintained, unsound), else `unknown`.
+
+## Lockfile entry age
+
+`scripts/lock-entry-ages.mjs` runs in PR CI (`node-checks`, every PR, not
+only Dependabot's). It compares the PR's `yarn.lock` and
+`services/rust-api/Cargo.lock` with the base branch's and fails if a
+`name@version` the PR adds, direct or transitive, was published less than
+7 days ago (npm registry `time`, crates.io `created_at`). Exactly 7 days
+passes. Removed versions do not count, and neither does a change of only
+`resolved`, `integrity` or `checksum` for the same `name@version`.
+
+- Exit 1: a version too young and not accepted, or an exception that is
+  invalid or expired.
+- Exit 2, not checked: a registry lookup failed (network, HTTP error, version
+  missing or unpublished), or a lockfile entry is outside the closed grammar
+  of the advisory gate. Git, tarball, `file:` and other-registry sources fail
+  here with no exception possible: there is no registry publish date. Cargo
+  path dependencies and workspace members (no `source`) are skipped.
+- Like the advisory gate, CI runs the base branch's copy of the script (and
+  of `advisory-gate.mjs`, whose parser it imports), so a PR that edits them
+  is judged by the old version. Reviewers run develop's copy the same way
+  (commands in "Dependency updates (Dependabot)").
+
+The usual fix is to wait, or to keep the previous version (in `yarn.lock`,
+pin the range to the older entry; in Cargo, `cargo update -p <crate>
+--precise <older>`).
+
+### Asking for an exception (`security/lock-age-allowlist.json`)
+
+Only when the version cannot wait, typically a security fix. Add an entry in
+the same PR and explain it in the PR description; the gate lists it as a
+warning, and `security/` changes need the owner's review:
+
+```json
+{
+  "ecosystem": "npm",
+  "package": "example-package",
+  "version": "1.2.3",
+  "ghsa": "GHSA-xxxx-xxxx-xxxx",
+  "reason": "Why this version cannot wait 7 days, in one or two sentences.",
+  "reviewBy": "2026-12-01"
+}
+```
+
+- `ecosystem`: `npm` or `crates.io`; `package` and `version` exact (the real
+  package name, not an alias). One entry per version.
+- `ghsa`: the advisory the young version is needed for.
+- `reviewBy`: at most 30 days ahead. The day after, the entry fails every PR
+  until it is removed (by then the version is old enough).
+- An exception accepts the age only: the registry lookup must still succeed.

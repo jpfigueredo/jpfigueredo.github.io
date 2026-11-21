@@ -1,5 +1,6 @@
 # Pull request checks.
 #   node-checks: a dependency advisory gate (OSV, yarn.lock and Cargo.lock),
+#                a minimum age (7 days) for every new lockfile entry,
 #                typecheck, tests (incl. seed-vs-schema validation), a guard
 #                against an empty or skipped test suite, lint and build.
 #   rust-checks: cargo fmt, clippy and tests for services/rust-api (clippy
@@ -89,11 +90,12 @@ jobs:
         # Allowlist entries the PR adds or edits are listed as warnings for
         # the reviewer.
         #
-        # It must stay the first step that runs anything from the checkout.
-        # Every later step of this job executes code the PR controls, and
-        # code that ran earlier could reach this one through GITHUB_ENV or
-        # GITHUB_PATH:
-        #   - Advisory gate self-test: the PR's script and tests;
+        # It must stay the first step that runs anything from the checkout,
+        # followed only by the lockfile entry age gate (same model). Every
+        # later step of this job executes code the PR controls, and code that
+        # ran earlier could reach these two through GITHUB_ENV or GITHUB_PATH:
+        #   - Advisory gate self-test, lock age gate self-test: the PR's
+        #     scripts and tests;
         #   - Toolchain versions and every yarn command after it: yarn 1
         #     runs the file named by `yarn-path` in the PR's .yarnrc;
         #   - Check package.json files against yarn.lock: the PR's script;
@@ -130,6 +132,75 @@ jobs:
           node --version
           env -u NODE_OPTIONS node "$gate_dir/advisory-gate.mjs" --mode ratchet --base HEAD^1 --head HEAD
 
+      - name: Lockfile entry age (minimum 7 days, gate code from the base branch)
+        if: ${{ !cancelled() }}
+        # Fails if a name@version that this PR adds to yarn.lock or
+        # services/rust-api/Cargo.lock (direct or transitive, on every PR, not
+        # only Dependabot's) was published less than 7 days ago, per the npm
+        # registry (`time`) or crates.io (`created_at`), unless
+        # security/lock-age-allowlist.json accepts it, or if an exception is
+        # invalid or expired. Fails closed if a registry lookup fails or a
+        # lockfile entry is not a registry package (closed grammar of the
+        # advisory gate). A change of only `resolved`/`integrity`/`checksum`
+        # for the same name@version is not in its scope. Details and the
+        # exception format: scripts/lock-entry-ages.mjs, CONTRIBUTING.md.
+        #
+        # Same model as the advisory gate above: scripts/lock-entry-ages.mjs
+        # and the advisory-gate.mjs it imports (the lockfile parser) both come
+        # from the base branch (HEAD^1), copied to $RUNNER_TEMP with
+        # `git show`; the lockfiles and the exceptions of the merge commit
+        # (HEAD) are read with `git show`. It runs before any step that
+        # executes PR code (see the list above).
+        #
+        # Bootstrap, narrow on purpose: the PR's copy of both files runs only
+        # while the base branch's ci.yml does not run this gate yet (it does
+        # not mention scripts/lock-entry-ages.mjs, or there is no ci.yml):
+        # the PR that adds the gate, and the promotion PRs to release/main
+        # before it gets there. Once the base's ci.yml runs the gate, the base
+        # copy is required: if the base has the ci.yml step but not one of the
+        # two scripts, this fails instead of falling back to the PR's copy.
+        # ("The base has the file" cannot be the test: lock-entry-ages.mjs
+        # existed before as a manual tool, and a deletion merged into the base
+        # must not turn the gate into the PR's copy.)
+        run: |
+          if [ "$(git rev-list --parents -n 1 HEAD | wc -w)" -ne 3 ]; then
+            echo "::error title=lock age gate::HEAD is not a PR merge commit, so the base branch is unknown."
+            exit 1
+          fi
+          git log -1 --format='base (HEAD^1): %H %s' HEAD^1
+          git log -1 --format='head (HEAD):   %H %s' HEAD
+          gate_dir="$RUNNER_TEMP/lock-age-gate"
+          mkdir -p "$gate_dir"
+          base_runs_gate=no
+          if [ -n "$(git ls-tree --name-only HEAD^1 -- .github/workflows/ci.yml)" ]; then
+            git show --no-textconv HEAD^1:.github/workflows/ci.yml > "$gate_dir/base-ci.yml"
+            found=0
+            grep -q -F -- 'scripts/lock-entry-ages.mjs' "$gate_dir/base-ci.yml" || found=$?
+            case "$found" in
+              0) base_runs_gate=yes ;;
+              1) base_runs_gate=no ;;
+              *) echo "::error title=lock age gate::grep failed (exit $found) on the base ci.yml."; exit 1 ;;
+            esac
+          fi
+          if [ "$base_runs_gate" = yes ]; then
+            gate_ref=HEAD^1
+            echo "Gate code: scripts/lock-entry-ages.mjs and scripts/advisory-gate.mjs from the base branch (HEAD^1)."
+            for f in scripts/lock-entry-ages.mjs scripts/advisory-gate.mjs; do
+              if [ -z "$(git ls-tree --name-only HEAD^1 -- "$f")" ]; then
+                echo "::error title=lock age gate::The base branch's ci.yml runs this gate, but the base has no $f. The PR's copy is not used as a fallback; restore the file in the base branch."
+                exit 1
+              fi
+            done
+          else
+            gate_ref=HEAD
+            echo "::warning title=lock age gate::Bootstrap: the base branch's ci.yml does not run this gate yet, so this run uses this PR's copy of scripts/lock-entry-ages.mjs and scripts/advisory-gate.mjs. Once the base's ci.yml runs the gate, only the base copy runs."
+          fi
+          git show --no-textconv "$gate_ref:scripts/lock-entry-ages.mjs" > "$gate_dir/lock-entry-ages.mjs"
+          git show --no-textconv "$gate_ref:scripts/advisory-gate.mjs" > "$gate_dir/advisory-gate.mjs"
+          sha256sum "$gate_dir/lock-entry-ages.mjs" "$gate_dir/advisory-gate.mjs"
+          node --version
+          env -u NODE_OPTIONS node "$gate_dir/lock-entry-ages.mjs" --base HEAD^1 --head HEAD
+
       - name: Advisory gate self-test
         if: ${{ !cancelled() }}
         # Unit tests of this PR's copy of the gate (no network: git and OSV
@@ -146,6 +217,23 @@ jobs:
           echo "advisory gate tests: pass=${pass:-none} skipped=${skipped:-none} todo=${todo:-none} (minimum $ADVISORY_GATE_MIN_TESTS)"
           if [ -z "$pass" ] || [ "$pass" -lt "$ADVISORY_GATE_MIN_TESTS" ] || [ "${skipped:-1}" -ne 0 ] || [ "${todo:-1}" -ne 0 ]; then
             echo "::error title=advisory gate self-test::Expected at least $ADVISORY_GATE_MIN_TESTS passing tests and none skipped or todo; got pass=${pass:-none} skipped=${skipped:-none} todo=${todo:-none}."
+            exit 1
+          fi
+
+      - name: Lock age gate self-test
+        if: ${{ !cancelled() }}
+        # Unit tests of this PR's copy of scripts/lock-entry-ages.mjs (no
+        # network: git, the registries and the clock are faked), same rules
+        # as the advisory gate self-test. Raise the number when you add tests.
+        env:
+          LOCK_AGE_GATE_MIN_TESTS: "51"
+        run: |
+          node --test --test-reporter=tap scripts/lock-entry-ages.test.mjs | tee "$RUNNER_TEMP/lock-age-gate-tests.tap"
+          count() { sed -n "s/^# $1 \([0-9][0-9]*\)$/\1/p" "$RUNNER_TEMP/lock-age-gate-tests.tap"; }
+          pass="$(count pass)"; skipped="$(count skipped)"; todo="$(count todo)"
+          echo "lock age gate tests: pass=${pass:-none} skipped=${skipped:-none} todo=${todo:-none} (minimum $LOCK_AGE_GATE_MIN_TESTS)"
+          if [ -z "$pass" ] || [ "$pass" -lt "$LOCK_AGE_GATE_MIN_TESTS" ] || [ "${skipped:-1}" -ne 0 ] || [ "${todo:-1}" -ne 0 ]; then
+            echo "::error title=lock age gate self-test::Expected at least $LOCK_AGE_GATE_MIN_TESTS passing tests and none skipped or todo; got pass=${pass:-none} skipped=${skipped:-none} todo=${todo:-none}."
             exit 1
           fi
 

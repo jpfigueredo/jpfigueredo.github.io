@@ -1,0 +1,5 @@
+{
+  "$comment": "Lockfile entries accepted although published less than 7 days ago. Format and rules: CONTRIBUTING.md, 'Lockfile entry age'. Checked by scripts/lock-entry-ages.mjs.",
+  "version": 1,
+  "entries": []
+}
