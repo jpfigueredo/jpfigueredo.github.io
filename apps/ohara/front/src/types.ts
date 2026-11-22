@@ -1,4 +1,4 @@
-// Tipos da trilha — espelham web/src/data/ohara/schema.json.
+// Tipos da trilha — espelham @jpfig/ohara-data/schema.json (packages/ohara-data).
 // ownership NÃO aparece aqui: é resolvido em runtime (só no modo local).
 
 export type SourceType = 'free' | 'retail' | 'preview-embed';

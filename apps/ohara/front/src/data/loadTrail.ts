@@ -1,6 +1,6 @@
 import type { Trail } from '../types';
 import { config } from '../config';
-import staticTrail from './seed.distributed-systems.json';
+import staticTrail from '@jpfig/ohara-data/seed.distributed-systems.json';
 
 /**
  * Fonte da trilha, resolvida por config. Hoje: import estático (modo público =

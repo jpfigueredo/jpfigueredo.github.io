@@ -32,8 +32,8 @@ import { readFileSync } from 'node:fs';
 // Packages that must have a real `test` task in the turbo graph.
 const EXPECTED_TEST_TASKS = ['@jpfig/ohara-front'];
 
-// @jpfig/ohara-front vitest suite (71 tests in 3 files on 2026-11-21).
-const MIN_OHARA_FRONT_TESTS = 71;
+// @jpfig/ohara-front vitest suite (75 tests in 3 files on 2026-11-22).
+const MIN_OHARA_FRONT_TESTS = 75;
 const MAX_OHARA_FRONT_SKIPPED = 0;
 
 const [turboDryPath, vitestReportPath] = process.argv.slice(2);
