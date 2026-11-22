@@ -368,6 +368,25 @@ jobs:
             exit 1
           fi
 
+      - name: Reference extractor tests
+        if: ${{ !cancelled() }}
+        # Unit tests of scripts/extract-references.mjs (no network: the
+        # sources are synthetic git repositories made in a temp dir). Same
+        # rules as the gate self-tests: fails if any test fails, fewer than
+        # REFERENCE_EXTRACTOR_MIN_TESTS pass, or any is skipped or todo.
+        # Raise the number when you add tests.
+        env:
+          REFERENCE_EXTRACTOR_MIN_TESTS: "133"
+        run: |
+          node --test --test-reporter=tap scripts/extract-references.test.mjs | tee "$RUNNER_TEMP/reference-extractor-tests.tap"
+          count() { sed -n "s/^# $1 \([0-9][0-9]*\)$/\1/p" "$RUNNER_TEMP/reference-extractor-tests.tap"; }
+          pass="$(count pass)"; fail="$(count fail)"; skipped="$(count skipped)"; todo="$(count todo)"
+          echo "reference extractor tests: pass=${pass:-none} fail=${fail:-none} skipped=${skipped:-none} todo=${todo:-none} (minimum $REFERENCE_EXTRACTOR_MIN_TESTS)"
+          if [ -z "$pass" ] || [ "$pass" -lt "$REFERENCE_EXTRACTOR_MIN_TESTS" ] || [ "${fail:-1}" -ne 0 ] || [ "${skipped:-1}" -ne 0 ] || [ "${todo:-1}" -ne 0 ]; then
+            echo "::error title=reference extractor tests::Expected at least $REFERENCE_EXTRACTOR_MIN_TESTS passing tests and none failed, skipped or todo; got pass=${pass:-none} fail=${fail:-none} skipped=${skipped:-none} todo=${todo:-none}."
+            exit 1
+          fi
+
       # The steps below run even if the advisory gate failed, so one run
       # shows every failure.
 
