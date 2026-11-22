@@ -1,0 +1,11 @@
+{
+  "name": "@jpfig/ohara-data",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Ohara trail data: the single copy of each trail seed and of the JSON Schema they follow.",
+  "type": "module",
+  "exports": {
+    "./schema.json": "./schema.json",
+    "./seed.distributed-systems.json": "./seed.distributed-systems.json"
+  }
+}

@@ -2,21 +2,19 @@
 import { describe, it, expect } from 'vitest';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
-// O schema mora em web/ (contrato publicado); os seeds são validados contra ele.
-import schema from '../../../../web/src/data/ohara/schema.json';
-import webSeed from '../../../../web/src/data/ohara/seed.distributed-systems.json';
-import appSeed from './data/seed.distributed-systems.json';
+// Seed e schema têm uma cópia só, no pacote @jpfig/ohara-data (packages/ohara-data).
+import schema from '@jpfig/ohara-data/schema.json';
+import seedDistributedSystems from '@jpfig/ohara-data/seed.distributed-systems.json';
 
 const SEEDS: [string, unknown][] = [
-  ['web/src/data/ohara/seed.distributed-systems.json', webSeed],
-  ['apps/ohara/front/src/data/seed.distributed-systems.json', appSeed],
+  ['packages/ohara-data/seed.distributed-systems.json', seedDistributedSystems],
 ];
 
 const ajv = new Ajv({ allErrors: true });
 addFormats(ajv);
 const validate = ajv.compile(schema);
 
-const validSeed = () => structuredClone(webSeed) as { nodes: Record<string, unknown>[] };
+const validSeed = () => structuredClone(seedDistributedSystems) as { nodes: Record<string, unknown>[] };
 const withExplainer = (explainer: Record<string, unknown>) => {
   const seed = validSeed();
   seed.nodes[0].explainers = [explainer];
@@ -65,16 +63,48 @@ describe('schema do seed (ajv)', () => {
   });
 });
 
-// Todo seed.*.json no disco, nas duas pastas onde o seed mora. Só os caminhos
-// (glob preguiçoso): serve para provar que nenhum seed fica de fora de SEEDS.
-const SEEDS_NO_DISCO = [
-  ...Object.keys(import.meta.glob('../../../../web/src/data/ohara/seed.*.json')).map((p) =>
-    p.replace('../../../../', ''),
+const PASTA_CANONICA = 'packages/ohara-data';
+// Chave do glob (relativa a este arquivo) -> caminho a partir da raiz do repo.
+const doRepo = (p: string) =>
+  decodeURIComponent(new URL(p, 'file:///repo/apps/ohara/front/src/').pathname).replace('/repo/', '');
+
+// Todo seed.*.json no disco, na pasta canônica. Só os caminhos (glob
+// preguiçoso): serve para provar que nenhum seed fica de fora de SEEDS.
+const SEEDS_NO_DISCO = Object.keys(import.meta.glob('../../../../packages/ohara-data/seed.*.json')).map(doRepo);
+
+// Todo .json do repo, com o conteúdo cru. O glob do Vite já pula pastas ocultas
+// (.git, .turbo, .pages); node_modules e saídas de build saem pelos padrões "!".
+const JSONS_DO_REPO = Object.entries(
+  import.meta.glob<string>(
+    ['../../../../**/*.json', '!**/node_modules/**', '!**/dist/**', '!**/target/**'],
+    { query: '?raw', import: 'default', eager: true },
   ),
-  ...Object.keys(import.meta.glob('./data/seed.*.json')).map((p) =>
-    p.replace('./', 'apps/ohara/front/src/'),
-  ),
-];
+).map(([p, conteudo]) => [doRepo(p), conteudo] as const);
+
+// Guarda contra uma segunda cópia do seed ou do schema. Um arquivo é "dado do
+// Ohara" se tem nome de seed num caminho do Ohara, se tem a forma de um seed de
+// trilha (trail.id + nodes[]) ou se declara o $id do schema. Pela forma pega
+// também uma cópia renomeada e já divergente do original.
+const SCHEMA_ID = (schema as { $id: string }).$id;
+
+function ehDadoDoOhara(relPath: string, conteudo: string): boolean {
+  const nome = relPath.slice(relPath.lastIndexOf('/') + 1);
+  if (/^seed.*\.json$/i.test(nome) && /ohara/i.test(relPath)) return true;
+  let json: unknown;
+  try {
+    json = JSON.parse(conteudo);
+  } catch {
+    return false;
+  }
+  if (json === null || typeof json !== 'object') return false;
+  const obj = json as { trail?: { id?: unknown }; nodes?: unknown; $id?: unknown };
+  const formaDeSeed = typeof obj.trail?.id === 'string' && Array.isArray(obj.nodes);
+  return formaDeSeed || obj.$id === SCHEMA_ID;
+}
+
+const DADOS_DO_OHARA = JSONS_DO_REPO.filter(([rel, conteudo]) => ehDadoDoOhara(rel, conteudo)).map(
+  ([rel]) => rel,
+);
 
 type Seed = { nodes: { explainers?: unknown[] }[] };
 
@@ -87,8 +117,42 @@ describe('schema do seed (ajv): guardas contra teste que passa vazio', () => {
   it('SEEDS lista exatamente os seeds que existem no disco', () => {
     // Se um seed deixar de ser importado (ou um novo for criado sem entrar em SEEDS),
     // o it.each acima roda menos casos e continua verde. Este teste pega isso.
-    expect(SEEDS_NO_DISCO.length).toBeGreaterThanOrEqual(2);
+    expect(SEEDS_NO_DISCO.length).toBeGreaterThanOrEqual(1);
     expect(SEEDS.map(([path]) => path).sort()).toEqual([...SEEDS_NO_DISCO].sort());
+  });
+
+  it('seed e schema do Ohara só existem em packages/ohara-data (uma cópia só)', () => {
+    // Uma cópia fora daqui volta a ser lida por alguém e diverge em silêncio.
+    // Importe de @jpfig/ohara-data em vez de copiar o arquivo.
+    const fora = DADOS_DO_OHARA.filter((rel) => !rel.startsWith(`${PASTA_CANONICA}/`));
+    expect(fora).toEqual([]);
+    expect([...DADOS_DO_OHARA].sort()).toEqual(
+      [...SEEDS_NO_DISCO, `${PASTA_CANONICA}/schema.json`].sort(),
+    );
+  });
+
+  it('a varredura da guarda vê o repo (não passa vazia)', () => {
+    const jsons = JSONS_DO_REPO.map(([rel]) => rel);
+    expect(jsons).toContain('package.json');
+    expect(jsons).toContain('apps/ohara/front/package.json');
+    expect(jsons).toContain(`${PASTA_CANONICA}/schema.json`);
+    expect(jsons.some((rel) => rel.includes('node_modules/'))).toBe(false);
+  });
+
+  const seedJson = JSON.stringify(seedDistributedSystems);
+  it.each([
+    ['cópia do seed no front', 'apps/ohara/front/src/data/seed.distributed-systems.json', seedJson],
+    ['seed renomeado e alterado fora de pasta do Ohara', 'web/src/data/trilha.json',
+      JSON.stringify({ ...seedDistributedSystems, nodes: [] })],
+    ['cópia do schema com outro nome', 'web/src/data/contrato.json', JSON.stringify(schema)],
+    ['seed* quebrado num caminho do Ohara', 'apps/ohara/front/src/data/seed.novo.json', '{'],
+  ])('a guarda reconhece como dado do Ohara: %s', (_caso, rel, conteudo) => {
+    expect(ehDadoDoOhara(rel, conteudo)).toBe(true);
+  });
+
+  it('a guarda ignora seed.json de outro projeto (sem trail)', () => {
+    const outro = JSON.stringify({ nodes: [], edges: [] });
+    expect(ehDadoDoOhara('web/src/data/outro/seed.json', outro)).toBe(false);
   });
 
   it.each(SEEDS)('%s não está truncado (≥ 26 nós)', (_path, seed) => {
