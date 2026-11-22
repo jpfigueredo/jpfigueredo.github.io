@@ -103,3 +103,35 @@ yarn ci:verify:links
 
 Veja mais detalhes em `scripts/verify-sources.mjs`.
 
+
+---
+
+## `extract-references.mjs` - Extrator de referências de uma fonte fixada
+
+Lê as páginas Markdown de um repositório aberto, **fixado por SHA** num arquivo de pino
+(ex.: `packages/ohara-data/sources/cah.pin.json`), e gera um manifesto JSON determinístico com o que cada
+página cita: links classificados (`rfc`, `nist`, `fips`, `attack`, `cisa`, `vendor`, `other`) com id
+canônico quando existe (`RFC 8446`, `FIPS 197`, `SP 800-38D`, `T1110.001`), título, banner de status,
+cabeçalhos, linhas da tabela "Claims register" e os "Next:". Sem dependências e sem rede.
+
+O conteúdo da fonte é tratado como não confiável: o extrator não clona nem executa nada do repositório,
+confere `git rev-parse HEAD` contra o pino e lê os blobs do commit fixado (`git ls-tree`/`git cat-file`),
+nunca o worktree; remove caracteres invisíveis e de controle e comentários HTML antes de extrair; limita o
+tamanho por página; só guarda URLs `http(s)`. Detalhes no cabeçalho do script.
+
+### Uso
+
+```bash
+# clone raso, num diretório novo, no SHA do pino (nada do repositório é executado)
+git init -q /tmp/fonte && git -C /tmp/fonte fetch -q --depth 1 https://github.com/<owner>/<repo>.git <sha>
+git -C /tmp/fonte -c advice.detachedHead=false checkout -q FETCH_HEAD
+
+node scripts/extract-references.mjs --pin packages/ohara-data/sources/cah.pin.json --repo /tmp/fonte --out manifesto.json
+node scripts/extract-references.mjs ... --only-pinned   # só as páginas listadas no pino
+node scripts/extract-references.mjs ... --strict        # sai 1 se o formato do "Claims register" não bater
+node scripts/extract-references.mjs ... --run-info run.json --executor <rótulo>  # quem/quando, fora do manifesto
+node scripts/extract-references.mjs --diff a.json b.json  # páginas +/-, blob, banner, links e registro +/-
+```
+
+Saída: 0 ok; 1 clone diferente do pino (ou `--strict` com registro malformado); 2 uso, I/O ou git.
+Testes: `node --test scripts/extract-references.test.mjs`.
