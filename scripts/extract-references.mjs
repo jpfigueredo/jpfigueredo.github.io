@@ -5,24 +5,29 @@
 // its headings, its status banner, its "Claims register" table and its "Next:"
 // pointers. A second mode compares two manifests.
 //
-// The pages are third-party content and are treated as untrusted input:
-//   - nothing from the source repository is executed: the only process started
-//     is git, with fixed arguments, network transports disabled and lazy
-//     fetching off;
-//   - blobs are read from the pinned commit with `git ls-tree` and
-//     `git cat-file`, never from the working tree, after checking that
-//     `git rev-parse HEAD` equals the pinned SHA;
+// The pages and the clone are third-party content and are treated as
+// untrusted input:
+//   - nothing from the source repository is executed, and git never runs in
+//     the clone or reads its config: objects are read through a temp bare
+//     repository whose alternates point at the clone's objects, with a
+//     minimal environment (see "reading the clone" below);
+//   - HEAD must equal the pinned SHA; every object read (the commit, the
+//     trees down to pagesDir, each page blob) is re-hashed and must match its
+//     name, and each pinned page must have its pinned blob SHA;
 //   - a page larger than MAX_PAGE_BYTES, or not valid UTF-8, is skipped and
 //     listed under `skipped`;
-//   - invisible and control characters (bidi overrides, zero-width, tag
-//     characters, ...) are removed first, then HTML comments, so text hidden
-//     from a reader of the rendered page never reaches the manifest;
-//   - only http(s) URLs are kept; javascript:, data:, file: and every other
-//     scheme, URLs with credentials and over-long URLs are counted under
-//     `rejectedLinks` by reason only, the URL itself is dropped;
+//   - hidden content (HTML comments, processing instructions, declarations,
+//     CDATA) is removed where a renderer would hide it, before and after
+//     invisible and control characters (bidi overrides, zero-width, tag
+//     characters, ...), so text hidden from a reader of the rendered page does
+//     not reach the manifest;
+//   - only http(s) URLs are kept, after Markdown entity and backslash
+//     decoding; javascript:, data:, file: and every other scheme, URLs with
+//     credentials and over-long URLs are counted under `rejectedLinks` by
+//     reason only, the URL itself is dropped;
 //   - no eval, no dynamic import; every regular expression is anchored or
 //     bounded and has no nested or overlapping quantifiers (see the ReDoS
-//     tests). Link parsing is a linear scanner.
+//     tests). Link and hidden-content parsing are linear scanners.
 //
 // Output is deterministic: objects are built with a fixed key order, arrays
 // are sorted by code unit, and the manifest holds no run time or user. Who
@@ -38,11 +43,12 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
-import { posix } from 'node:path';
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.1.0';
 export const TOOL = 'extract-references';
 export const MANIFEST_SCHEMA = 'reference-manifest/1';
 export const DIFF_SCHEMA = 'reference-manifest-diff/1';
@@ -89,49 +95,185 @@ export function isInvisible(cp) {
   return false;
 }
 
-// Removes HTML comments in one linear pass. Comment syntax that only appears
-// after an inner comment is removed (`<!<!-- a -->-- b -->`) is removed too,
-// because the check runs on the output: the result never contains `<!--`.
-// An unterminated comment runs to the end of the text, as in HTML.
-export function stripHtmlComments(text) {
-  const out = [];
-  let removed = 0;
-  let inComment = false;
-  let tail = '';
-  for (const ch of text) {
-    if (inComment) {
-      tail = (tail + ch).slice(-3);
-      if (tail === '-->') {
-        inComment = false;
-        tail = '';
-      }
-      continue;
-    }
-    out.push(ch);
-    const n = out.length;
-    if (n >= 4 && out[n - 1] === '-' && out[n - 2] === '-' && out[n - 3] === '!' && out[n - 4] === '<') {
-      out.length = n - 4;
-      inComment = true;
-      removed += 1;
-      tail = '';
-    }
+// Hidden constructs: content that a Markdown renderer passes through as raw
+// HTML and a browser does not show. `close: null` means the opener is a whole
+// construct by itself (`<!-->` and `<!--->` are empty comments).
+function hiddenOpenerAt(s, i) {
+  if (s.startsWith('<!--', i)) {
+    if (s.startsWith('<!-->', i)) return { len: 5, close: null };
+    if (s.startsWith('<!--->', i)) return { len: 6, close: null };
+    return { len: 4, close: '-->' };
   }
-  return { text: out.join(''), removed };
+  if (s.startsWith('<![CDATA[', i)) return { len: 9, close: ']]>' };
+  if (s.startsWith('<?', i)) return { len: 2, close: '?>' };
+  if (s[i + 1] === '!' && /^[A-Za-z]$/.test(s[i + 2] ?? '')) return { len: 2, close: '>' };
+  return null;
 }
 
-// Newlines first, then invisible characters (so they cannot split a `<!--`),
-// then HTML comments, then NFC.
-export function sanitize(raw) {
-  const text = raw.replace(/\r\n?/g, '\n');
-  let invisibleChars = 0;
+// Prefix after which an opener counts as the start of an HTML block:
+// blockquote markers and up to three spaces.
+const BLOCK_PREFIX = /^(?: {0,3}>)* {0,3}/;
+const PARAGRAPH_END = /\n[ \t]*\n/g;
+
+// Removes HTML comments, processing instructions (`<?...?>`), declarations
+// (`<!X...>`) and CDATA sections, following where a Markdown renderer would
+// see them:
+//   - nothing inside a fenced code block or an inline code span is touched;
+//   - an opener at the start of a line (an HTML block) hides everything up to
+//     its terminator, or to the end of the page when there is none;
+//   - an opener in the middle of a line hides text only when its terminator
+//     comes before the end of the paragraph; otherwise it is literal text.
+// Newlines inside a removed range are kept, so line numbers still match the
+// source. Linear: each `<` is looked at once and the searches for a
+// terminator or a paragraph end are cached per terminator.
+export function stripHidden(text) {
+  const lines = text.split('\n');
+  const starts = [];
+  let offset = 0;
+  for (const l of lines) {
+    starts.push(offset);
+    offset += l.length + 1;
+  }
+  const cuts = [];
+  const closeCache = new Map();
+  const findClose = (close, from) => {
+    const c = closeCache.get(close);
+    if (c && from >= c.from && (c.at === -1 || from <= c.at)) return c.at;
+    const at = text.indexOf(close, from);
+    closeCache.set(close, { from, at });
+    return at;
+  };
+  let paraCache = null;
+  const paragraphEnd = (from) => {
+    if (paraCache && from >= paraCache.from && from <= paraCache.at) return paraCache.at;
+    PARAGRAPH_END.lastIndex = from;
+    const m = PARAGRAPH_END.exec(text);
+    const at = m ? m.index : text.length;
+    paraCache = { from, at };
+    return at;
+  };
+
+  let fence = null;
+  let block = null; // { start, close }
+  let consumedTo = 0; // absolute position up to which text is already removed
+  for (let li = 0; li < lines.length; li += 1) {
+    const line = lines[li];
+    const lineStart = starts[li];
+    const lineEnd = lineStart + line.length;
+    if (consumedTo > lineEnd) continue;
+    let col = Math.max(0, consumedTo - lineStart);
+
+    if (block) {
+      const at = findClose(block.close, Math.max(block.start, lineStart));
+      if (at === -1 || at >= lineEnd) continue;
+      cuts.push([block.start, at + block.close.length]);
+      col = at + block.close.length - lineStart;
+      block = null;
+    } else if (fence) {
+      const t = line.trim();
+      const indent = line.length - line.trimStart().length;
+      if (indent <= 3 && t[0] === fence[0] && t.length >= fence.length && /^(?:`{3,}|~{3,})$/.test(t)) fence = null;
+      continue;
+    } else if (col === 0) {
+      const f = FENCE.exec(line);
+      if (f) {
+        fence = f[1];
+        continue;
+      }
+    }
+
+    const masked = maskCodeSpans(line);
+    const blockCol = col === 0 ? BLOCK_PREFIX.exec(line)[0].length : -1;
+    let j = col;
+    while (j < line.length) {
+      const k = masked.indexOf('<', j);
+      if (k === -1) break;
+      const op = hiddenOpenerAt(line, k);
+      if (!op) {
+        j = k + 1;
+        continue;
+      }
+      const abs = lineStart + k;
+      if (op.close === null) {
+        cuts.push([abs, abs + op.len]);
+        j = k + op.len;
+        continue;
+      }
+      const at = findClose(op.close, abs + op.len);
+      if (k === blockCol) {
+        if (at !== -1 && at < lineEnd) {
+          cuts.push([abs, at + op.close.length]);
+          j = at + op.close.length - lineStart;
+          continue;
+        }
+        block = { start: abs, close: op.close };
+        break;
+      }
+      if (at !== -1 && at < paragraphEnd(abs)) {
+        const end = at + op.close.length;
+        cuts.push([abs, end]);
+        if (end > lineEnd) {
+          consumedTo = end;
+          break;
+        }
+        j = end - lineStart;
+        continue;
+      }
+      j = k + 1;
+    }
+  }
+  if (block) cuts.push([block.start, text.length]);
+
+  if (cuts.length === 0) return { text, removed: 0 };
+  const out = [];
+  let at = 0;
+  for (const [s, e] of cuts) {
+    out.push(text.slice(at, s));
+    const hidden = text.slice(s, e);
+    for (let n = hidden.indexOf('\n'); n !== -1; n = hidden.indexOf('\n', n + 1)) out.push('\n');
+    at = e;
+  }
+  out.push(text.slice(at));
+  return { text: out.join(''), removed: cuts.length };
+}
+
+function removeInvisible(text) {
+  let count = 0;
   const kept = [];
   for (const ch of text) {
-    if (isInvisible(ch.codePointAt(0))) invisibleChars += 1;
+    if (isInvisible(ch.codePointAt(0))) count += 1;
     else kept.push(ch);
   }
-  const visible = kept.join('');
-  const { text: noComments, removed } = stripHtmlComments(visible);
-  return { text: noComments.normalize('NFC'), htmlComments: removed, invisibleChars };
+  return { text: kept.join(''), count };
+}
+
+const MAX_HIDDEN_PASSES = 16;
+
+// Order: hidden constructs are removed from the raw text, then invisible
+// characters, then hidden constructs again, until nothing changes. The first
+// pass runs on the raw text so an invisible character inside a terminator
+// (`-<ZWSP>->`) cannot close a comment early; the later passes catch openers
+// that only form once invisible characters or inner constructs are gone
+// (`<!-<ZWSP>-`, `<!<!-- a -->-- b -->`). Removing too much is the safe side.
+// If the text still changes after MAX_HIDDEN_PASSES (only for adversarial
+// nesting), every `<!` and `<?` is broken up, which ends the loop. Then NFC.
+// The result is a fixed point: sanitize(sanitize(x).text).text equals
+// sanitize(x).text.
+export function sanitize(raw) {
+  let text = raw.replace(/\r\n?/g, '\n');
+  let r = stripHidden(text);
+  text = r.text;
+  let htmlComments = r.removed;
+  const inv = removeInvisible(text);
+  text = inv.text;
+  for (let pass = 0; pass < MAX_HIDDEN_PASSES; pass += 1) {
+    r = stripHidden(text);
+    if (r.removed === 0) break;
+    text = r.text;
+    htmlComments += r.removed;
+  }
+  if (stripHidden(text).removed > 0) text = text.replace(/<(?=[!?])/g, '');
+  return { text: text.normalize('NFC'), htmlComments, invisibleChars: inv.count };
 }
 
 // ------------------------------------------------------------ inline Markdown
@@ -256,35 +398,78 @@ function parseDestination(line, p) {
 
 const AUTOLINK = /<([A-Za-z][A-Za-z0-9+.-]{1,31}:[^<>\s]{1,2048})>/g;
 const BARE_URL = /\bhttps?:\/\/[^\s<>"'`()[\]{}|\\^]{1,2048}/gi;
-const REF_DEFINITION = /^ {0,3}\[[^\]\n]{1,500}\]:[ \t]*<?([^\s<>]{1,2048})>?/;
+const REF_DEFINITION = /^ {0,3}\[([^\]\n]{1,500})\]:[ \t]*(?:<([^<>\n]{0,2048})>|([^\s<>]{1,2048}))/;
+const REF_USE = /(!?)\[([^[\]\n]{1,999})\]/g;
 
-// Every link target in a line (code spans masked): inline links, reference
-// definitions, autolinks and bare http(s) URLs. Images are left out.
-export function linkTargets(line) {
+export const normalizeLabel = (label) => label.trim().replace(/\s+/g, ' ').toLowerCase();
+
+// A reference definition `[label]: target` on this line, or null.
+export function refDefinition(line) {
+  const m = REF_DEFINITION.exec(maskCodeSpans(line));
+  if (!m) return null;
+  return { label: normalizeLabel(m[1]), target: m[2] ?? m[3] };
+}
+
+// Every link target in a line (code spans masked), as { raw, decode }:
+// inline links and used reference links (decode: Markdown entity and
+// backslash decoding applies), autolinks and bare http(s) URLs (taken
+// literally). Images are left out. `refs` maps normalized labels to targets;
+// a definition only counts where a `[label]` uses it.
+export function linkTargets(line, refs = new Map()) {
   const masked = maskCodeSpans(line);
   const targets = [];
   const chars = masked.split('');
   const blank = (s, e) => {
     for (let k = s; k < e; k += 1) chars[k] = ' ';
   };
-  const def = REF_DEFINITION.exec(masked);
-  if (def) {
-    targets.push(def[1]);
-    blank(0, def[0].length);
-  }
-  for (const link of scanInlineLinks(chars.join(''))) {
-    if (!link.image) targets.push(link.dest);
+  for (const link of scanInlineLinks(masked)) {
+    if (!link.image) targets.push({ raw: link.dest, decode: true });
     blank(link.start, link.end);
   }
-  const rest1 = chars.join('');
-  for (const m of rest1.matchAll(AUTOLINK)) {
-    targets.push(m[1]);
+  if (refs.size > 0) {
+    for (const m of chars.join('').matchAll(REF_USE)) {
+      const target = refs.get(normalizeLabel(m[2]));
+      if (target === undefined) continue;
+      if (!m[1]) targets.push({ raw: target, decode: true });
+      blank(m.index, m.index + m[0].length);
+    }
+  }
+  for (const m of chars.join('').matchAll(AUTOLINK)) {
+    targets.push({ raw: m[1], decode: false });
     blank(m.index, m.index + m[0].length);
   }
   for (const m of chars.join('').matchAll(BARE_URL)) {
-    targets.push(trimTrailingPunctuation(m[0]));
+    targets.push({ raw: trimTrailingPunctuation(m[0]), decode: false });
   }
   return targets;
+}
+
+const NAMED_ENTITIES = new Map([
+  ['amp', '&'], ['lt', '<'], ['gt', '>'], ['quot', '"'], ['apos', "'"], ['colon', ':'], ['sol', '/'],
+  ['lpar', '('], ['rpar', ')'], ['period', '.'], ['comma', ','], ['semi', ';'], ['excl', '!'],
+  ['quest', '?'], ['num', '#'], ['percnt', '%'], ['equals', '='], ['plus', '+'], ['lowbar', '_'],
+  ['hyphen', '-'], ['dash', '-'], ['Tab', String.fromCharCode(9)], ['NewLine', String.fromCharCode(10)],
+]);
+const ENTITY = /&(?:#([0-9]{1,7})|#[xX]([0-9a-fA-F]{1,6})|([A-Za-z][A-Za-z0-9]{1,31}));/g;
+const BACKSLASH_ESCAPE = /\\([!-/:-@[-`{-~])/g;
+
+// What a Markdown renderer makes of a link destination: backslash escapes
+// and character references decoded (so `javascript&#58;` is seen as
+// `javascript:`). Returns null when it holds a named reference outside the
+// small table above: such a target is rejected rather than guessed.
+export function decodeTarget(raw) {
+  if (!raw.includes('&') && !raw.includes('\\')) return raw;
+  let unknown = false;
+  const decoded = raw.replace(BACKSLASH_ESCAPE, '$1').replace(ENTITY, (_, dec, hex, name) => {
+    if (name !== undefined) {
+      const v = NAMED_ENTITIES.get(name);
+      if (v === undefined) unknown = true;
+      return v ?? '';
+    }
+    const cp = dec !== undefined ? Number(dec) : Number.parseInt(hex, 16);
+    return cp === 0 || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff) ? String.fromCharCode(0xfffd) : String.fromCodePoint(cp);
+  });
+  return unknown ? null : decoded;
 }
 
 function trimTrailingPunctuation(url) {
@@ -446,6 +631,8 @@ function fromPubsPath(rest) {
   const series = rest[0].toLowerCase();
   const parts = rest.slice(1).map((s) => s.toLowerCase());
   const stage = STAGES.has(parts[parts.length - 1]) ? parts.pop() : undefined;
+  // fips/140/3/final is FIPS 140-3
+  if (series === 'fips' && /^\d{1,3}$/.test(parts[0] ?? '') && /^\d{1,2}$/.test(parts[1] ?? '')) parts.splice(0, 2, `${parts[0]}-${parts[1]}`);
   if (series === 'fips' && /^\d{1,3}(?:-\d{1,2})?$/.test(parts[0] ?? '')) {
     return { kind: 'fips', id: `FIPS ${parts[0]}`, ...edition(undefined, stage) };
   }
@@ -475,7 +662,9 @@ function fromDetailPath(rest) {
   const stage = STAGES.has(tail[tail.length - 1]) ? tail.pop() : undefined;
   const rev = /^rev-?(\d{1,2})$/.exec(tail[0] ?? '');
   if (series === 'fips') {
-    const m = /^(\d{1,3}(?:-\d{1,2})?)$/.exec(name);
+    // fips/140/3/final and fips/140-3/final are both FIPS 140-3
+    const full = /^\d{1,3}$/.test(name) && /^\d{1,2}$/.test(tail[0] ?? '') ? `${name}-${tail[0]}` : name;
+    const m = /^(\d{1,3}(?:-\d{1,2})?)$/.exec(full);
     return m ? { kind: 'fips', id: `FIPS ${m[1]}`, ...edition(undefined, stage) } : { kind: 'fips' };
   }
   if (series === 'nistir' || series === 'ir') {
@@ -618,8 +807,45 @@ export function parsePage(path, text) {
   let register = null;
   let regState = null; // { level, phase: 'seek' | 'header' | 'sep' | 'rows' | 'done', cols }
 
-  const addTarget = (raw, sink) => {
-    const c = classifyTarget(raw);
+  // Reference definitions first (they may come after their use); the first
+  // definition of a label wins. Definition lines are not read as text.
+  const refs = new Map();
+  const defLines = new Set();
+  let preFence = null;
+  lines.forEach((line, idx) => {
+    if (preFence) {
+      const t = line.trim();
+      if (line.length - line.trimStart().length <= 3 && t[0] === preFence[0] && t.length >= preFence.length && /^(?:`{3,}|~{3,})$/.test(t)) preFence = null;
+      return;
+    }
+    const f = FENCE.exec(line);
+    if (f) {
+      preFence = f[1];
+      return;
+    }
+    const def = refDefinition(line);
+    if (def) {
+      if (!refs.has(def.label)) refs.set(def.label, def.target);
+      defLines.add(idx);
+    }
+  });
+
+  const addTarget = ({ raw, decode }, sink) => {
+    let target = raw;
+    if (decode) {
+      target = decodeTarget(raw);
+      if (target === null) {
+        rejected.set('entity', (rejected.get('entity') ?? 0) + 1);
+        return;
+      }
+      for (const ch of target) {
+        if (isInvisible(ch.codePointAt(0))) {
+          rejected.set('invisible', (rejected.get('invisible') ?? 0) + 1);
+          return;
+        }
+      }
+    }
+    const c = classifyTarget(target);
     if (c.type === 'url') {
       const key = c.url;
       const prev = linkCounts.get(key);
@@ -658,6 +884,8 @@ export function parsePage(path, text) {
       fence = f[1];
       continue;
     }
+
+    if (defLines.has(idx)) continue;
 
     const h = ATX.exec(line);
     if (h) {
@@ -715,8 +943,8 @@ export function parsePage(path, text) {
           } else {
             const sink = { urls: [], pages: [] };
             const sourceCell = cols.source === -1 ? '' : cells[cols.source];
-            for (const t of linkTargets(sourceCell)) addTarget(t, sink);
-            for (const t of linkTargets(cells[cols.claim])) addTarget(t);
+            for (const t of linkTargets(sourceCell, refs)) addTarget(t, sink);
+            for (const t of linkTargets(cells[cols.claim], refs)) addTarget(t);
             const claim = plainText(cells[cols.claim]);
             const status = plainText(cells[cols.status]);
             if (claim === '') register.errors.push({ line: lineNo, reason: 'empty-claim' });
@@ -736,7 +964,7 @@ export function parsePage(path, text) {
       }
     }
 
-    const targets = linkTargets(line);
+    const targets = linkTargets(line, refs);
     if (NEXT.test(line.trim())) {
       const sink = { urls: [], pages: [] };
       for (const t of targets) addTarget(t, sink);
@@ -773,10 +1001,27 @@ function dedupeUrls(urls) {
   return [...seen.values()].sort((a, b) => byString(a.url, b.url));
 }
 
-// ------------------------------------------------------------ pin and git
+// ------------------------------------------------------------ reading the clone
+//
+// The clone is untrusted too: its .git/config can name programs that git runs
+// (gpg.program with log.showSignature, include.path, core.fsmonitor,
+// core.sshCommand, hooks), and its object store can hold replace refs or a
+// rewritten loose object under a valid name. So:
+//   - git never runs inside the clone and never reads its config. Objects are
+//     read through a new, empty bare repository in a temp dir whose
+//     objects/info/alternates points at <clone>/.git/objects;
+//   - git gets an explicit minimal environment (no inherited GIT_*), no system
+//     or global config, replace objects off, lazy fetch off and
+//     protocol.allow=never;
+//   - every object read is re-hashed here (SHA-1 of "<type> <size>\0" plus the
+//     content) and must equal the name it was asked for: the pinned commit,
+//     each tree on the way to pagesDir, and every page blob. A mismatch is
+//     exit 1;
+//   - HEAD and refs/replace are read as files, not through git.
 
 const SHA_RE = /^[0-9a-f]{40}$/;
 const PIN_KEYS = ['repo', 'sha', 'date', 'license', 'pagesDir', 'pages'];
+const MAX_OBJECT_BYTES = 16 * 1024 * 1024;
 
 export function parsePin(text) {
   let pin;
@@ -809,24 +1054,142 @@ export function parsePin(text) {
   return pin;
 }
 
-// git with fixed arguments only. Network transports are refused and lazy
-// fetching of missing objects is off, so reading a blob never fetches.
-function git(dir, args, { maxBuffer = 16 * 1024 * 1024, encoding = 'utf8' } = {}) {
+// SHA-1 object name of `content` as a git object of `type`.
+export function gitObjectSha(type, content) {
+  return createHash('sha1').update(`${type} ${content.length}\0`).update(content).digest('hex');
+}
+
+// The clone's .git directory: a real directory (not a `gitdir:` file or a
+// symlink) directly in `root`.
+function cloneGitDir(root) {
+  const gitDir = join(root, '.git');
+  let st;
   try {
-    return execFileSync(
-      'git',
-      ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null', '-c', 'protocol.allow=never', '-C', dir, ...args],
-      {
-        encoding: encoding === 'buffer' ? 'buffer' : 'utf8',
-        maxBuffer,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env, GIT_NO_LAZY_FETCH: '1', GIT_TERMINAL_PROMPT: '0', GIT_PAGER: 'cat', GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C' },
-      },
-    );
-  } catch (err) {
-    const stderr = err.stderr ? err.stderr.toString().trim().split('\n').slice(-1)[0] : err.message;
-    throw new ExtractError(`git ${args[0]} failed: ${stderr}`);
+    st = lstatSync(gitDir);
+  } catch {
+    throw new ExtractError(`${root} is not the top of a git clone (no .git directory)`);
   }
+  if (!st.isDirectory()) throw new ExtractError(`${gitDir} must be a directory (worktrees and gitdir files are not supported)`);
+  return gitDir;
+}
+
+// HEAD of the clone, read as files: a detached SHA, or a ref resolved from
+// its loose file or packed-refs.
+function readHead(gitDir) {
+  const head = readFileSync(join(gitDir, 'HEAD'), 'utf8').trim();
+  if (SHA_RE.test(head)) return head;
+  const m = /^ref: (refs\/[A-Za-z0-9._/-]{1,200})$/.exec(head);
+  if (!m || m[1].split('/').includes('..')) throw new ExtractError(`cannot read HEAD of the clone: ${JSON.stringify(head.slice(0, 80))}`);
+  try {
+    const loose = readFileSync(join(gitDir, m[1]), 'utf8').trim();
+    if (SHA_RE.test(loose)) return loose;
+  } catch {
+    // not a loose ref; try packed-refs
+  }
+  try {
+    for (const line of readFileSync(join(gitDir, 'packed-refs'), 'utf8').split('\n')) {
+      const [sha, name] = line.split(' ');
+      if (name === m[1] && SHA_RE.test(sha)) return sha;
+    }
+  } catch {
+    // no packed-refs
+  }
+  throw new ExtractError(`cannot resolve HEAD (${m[1]}) of the clone`);
+}
+
+// Replace refs would make git hand out other content under a pinned name.
+// The reader below ignores them anyway; their presence is refused loudly.
+function refuseReplaceRefs(gitDir) {
+  const found = [];
+  const walk = (dir, rel) => {
+    let names;
+    try {
+      names = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const d of names) {
+      if (d.isDirectory()) walk(join(dir, d.name), `${rel}/${d.name}`);
+      else found.push(`${rel}/${d.name}`);
+    }
+  };
+  walk(join(gitDir, 'refs', 'replace'), 'refs/replace');
+  try {
+    for (const line of readFileSync(join(gitDir, 'packed-refs'), 'utf8').split('\n')) {
+      const name = line.split(' ')[1];
+      if (name?.startsWith('refs/replace/')) found.push(name);
+    }
+  } catch {
+    // no packed-refs
+  }
+  if (found.length) throw new ExtractError(`the clone has replace refs (${found.slice(0, 3).join(', ')}); refusing to read it`, 1);
+}
+
+// A reader over the clone's objects through a temp bare repository.
+function objectReader(gitDir) {
+  const objects = realpathSync(join(gitDir, 'objects'));
+  if (/[\n\r]/.test(objects)) throw new ExtractError('the object directory path contains a newline');
+  const bare = mkdtempSync(join(tmpdir(), 'extract-references-'));
+  for (const d of ['objects/info', 'objects/pack', 'refs/heads', 'refs/tags']) mkdirSync(join(bare, d), { recursive: true });
+  writeFileSync(join(bare, 'HEAD'), 'ref: refs/heads/main\n');
+  writeFileSync(join(bare, 'config'), '[core]\n\trepositoryformatversion = 0\n\tbare = true\n');
+  writeFileSync(join(bare, 'objects', 'info', 'alternates'), `${objects}\n`);
+  const env = {
+    PATH: process.env.PATH ?? '/usr/bin:/bin',
+    HOME: bare,
+    LC_ALL: 'C',
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_NO_REPLACE_OBJECTS: '1',
+    GIT_NO_LAZY_FETCH: '1',
+  };
+  const read = (type, sha) => {
+    let buf;
+    try {
+      buf = execFileSync('git', [`--git-dir=${bare}`, '-c', 'protocol.allow=never', 'cat-file', type, sha], {
+        cwd: bare,
+        env,
+        maxBuffer: MAX_OBJECT_BYTES,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (err) {
+      if (err.code === 'ENOBUFS') return null;
+      const stderr = err.stderr ? err.stderr.toString().trim().split('\n').slice(-1)[0] : err.message;
+      throw new ExtractError(`git cat-file ${type} ${sha} failed: ${stderr}`);
+    }
+    const actual = gitObjectSha(type, buf);
+    if (actual !== sha) throw new ExtractError(`object ${sha} (${type}) does not hash to its name (content hashes to ${actual}); the clone's object store was altered`, 1);
+    return buf;
+  };
+  return { read, close: () => rmSync(bare, { recursive: true, force: true }) };
+}
+
+// Commit date (YYYY-MM-DD, in the committer's own time zone) and tree.
+export function parseCommit(buf) {
+  const text = buf.toString('utf8');
+  const headerEnd = text.indexOf('\n\n');
+  const headers = (headerEnd === -1 ? text : text.slice(0, headerEnd)).split('\n');
+  const tree = /^tree ([0-9a-f]{40})$/.exec(headers[0] ?? '')?.[1];
+  const committer = headers.find((h) => h.startsWith('committer '));
+  const when = committer && / (\d{1,15}) ([+-])(\d{2})(\d{2})$/.exec(committer);
+  if (!tree || !when) throw new ExtractError('the pinned commit has no tree or committer line', 1);
+  const offset = (when[2] === '-' ? -1 : 1) * (Number(when[3]) * 3600 + Number(when[4]) * 60);
+  const date = new Date((Number(when[1]) + offset) * 1000).toISOString().slice(0, 10);
+  return { tree, date };
+}
+
+// Entries of a raw tree object: { mode, name, sha }.
+export function parseTree(buf) {
+  const entries = [];
+  let i = 0;
+  while (i < buf.length) {
+    const sp = buf.indexOf(0x20, i);
+    const nul = buf.indexOf(0x00, sp + 1);
+    if (sp === -1 || nul === -1 || nul + 21 > buf.length) throw new ExtractError('malformed tree object', 1);
+    entries.push({ mode: buf.toString('latin1', i, sp), name: buf.toString('utf8', sp + 1, nul), sha: buf.toString('hex', nul + 1, nul + 21) });
+    i = nul + 21;
+  }
+  return entries;
 }
 
 const UTF8 = new TextDecoder('utf-8', { fatal: true });
@@ -841,79 +1204,90 @@ export function extract({ pinText, repoDir, onlyPinned = false }) {
   } catch (err) {
     throw new ExtractError(`cannot use ${repoDir}: ${err.message}`);
   }
-  const top = git(root, ['rev-parse', '--show-toplevel']).trim();
-  if (realpathSync(top) !== root) throw new ExtractError(`${repoDir} is not the top of a git clone (top: ${top})`);
-  const head = git(root, ['rev-parse', '--verify', 'HEAD^{commit}']).trim();
+  const gitDir = cloneGitDir(root);
+  const head = readHead(gitDir);
   if (head !== pin.sha) throw new ExtractError(`HEAD is ${head}, the pin says ${pin.sha}`, 1);
-  const commitDate = git(root, ['show', '-s', '--format=%cs', pin.sha]).trim();
-  if (commitDate !== pin.date) throw new ExtractError(`commit date is ${commitDate}, the pin says ${pin.date}`, 1);
+  refuseReplaceRefs(gitDir);
 
-  const tree = git(root, ['ls-tree', '-z', '--full-tree', '-l', pin.sha, '--', `${pin.pagesDir}/`]);
-  const entries = [];
-  const skipped = [];
-  for (const rec of tree.split('\0')) {
-    if (!rec) continue;
-    const tab = rec.indexOf('\t');
-    const [mode, type, sha, size] = rec.slice(0, tab).split(/ +/);
-    const path = rec.slice(tab + 1);
-    if (posix.dirname(path) !== pin.pagesDir || !path.endsWith('.md')) continue;
-    if (type !== 'blob' || (mode !== '100644' && mode !== '100755')) {
-      skipped.push({ path, blobSha: sha, reason: `mode-${mode}` });
-      continue;
+  const reader = objectReader(gitDir);
+  try {
+    const commit = reader.read('commit', pin.sha);
+    const { tree: rootTree, date } = parseCommit(commit);
+    if (date !== pin.date) throw new ExtractError(`commit date is ${date}, the pin says ${pin.date}`, 1);
+
+    let treeSha = rootTree;
+    for (const seg of pin.pagesDir.split('/')) {
+      const entry = parseTree(reader.read('tree', treeSha)).find((e) => e.name === seg);
+      if (!entry || entry.mode !== '40000') throw new ExtractError(`${pin.pagesDir} is not a directory in ${pin.sha}`, 1);
+      treeSha = entry.sha;
     }
-    entries.push({ path, sha, size: Number(size) });
-  }
-  entries.sort((a, b) => byString(a.path, b.path));
-
-  const byPath = new Map(entries.map((e) => [e.path, e]));
-  const mismatches = [];
-  for (const p of pin.pages) {
-    const e = byPath.get(p.path);
-    if (!e) mismatches.push(`${p.path} is not in ${pin.sha}`);
-    else if (e.sha !== p.blobSha) mismatches.push(`${p.path} is blob ${e.sha}, the pin says ${p.blobSha}`);
-  }
-  if (mismatches.length) throw new ExtractError(`pinned pages do not match: ${mismatches.join('; ')}`, 1);
-  const wanted = onlyPinned ? new Set(pin.pages.map((p) => p.path)) : null;
-
-  const pages = [];
-  for (const e of entries) {
-    if (wanted && !wanted.has(e.path)) continue;
-    if (!(e.size <= MAX_PAGE_BYTES)) {
-      skipped.push({ path: e.path, blobSha: e.sha, reason: 'too-large', bytes: e.size });
-      continue;
+    const entries = [];
+    const skipped = [];
+    for (const e of parseTree(reader.read('tree', treeSha))) {
+      if (!e.name.endsWith('.md')) continue;
+      const path = `${pin.pagesDir}/${e.name}`;
+      if (e.mode !== '100644' && e.mode !== '100755') skipped.push({ path, blobSha: e.sha, reason: `mode-${e.mode.padStart(6, '0')}` });
+      else entries.push({ path, sha: e.sha });
     }
-    const buf = git(root, ['cat-file', 'blob', e.sha], { encoding: 'buffer', maxBuffer: MAX_PAGE_BYTES + 1 });
-    let raw;
-    try {
-      raw = UTF8.decode(buf);
-    } catch {
-      skipped.push({ path: e.path, blobSha: e.sha, reason: 'invalid-utf8', bytes: buf.length });
-      continue;
-    }
-    const clean = sanitize(raw);
-    const parsed = parsePage(e.path, clean.text);
-    pages.push({
-      path: e.path,
-      blobSha: e.sha,
-      bytes: buf.length,
-      ...parsed,
-      sanitized: { htmlComments: clean.htmlComments, invisibleChars: clean.invisibleChars },
-    });
-  }
-  skipped.sort((a, b) => byString(a.path, b.path));
+    entries.sort((a, b) => byString(a.path, b.path));
 
-  const content = { pages, skipped };
-  const contentSha256 = createHash('sha256').update(JSON.stringify(content)).digest('hex');
-  return {
-    schema: MANIFEST_SCHEMA,
-    source: { repo: pin.repo, sha: pin.sha, date: pin.date, license: pin.license, pagesDir: pin.pagesDir },
-    provenance: {
-      inputs: { repo: `https://github.com/${pin.repo}`, sha: pin.sha, pagesDir: pin.pagesDir, onlyPinned },
-      transformation: { tool: TOOL, version: VERSION, limits: { maxPageBytes: MAX_PAGE_BYTES, maxUrlChars: MAX_URL_CHARS, maxFieldChars: MAX_FIELD_CHARS } },
-      contentSha256,
-    },
-    ...content,
-  };
+    const byPath = new Map(entries.map((e) => [e.path, e]));
+    const mismatches = [];
+    for (const p of pin.pages) {
+      const e = byPath.get(p.path);
+      if (!e) mismatches.push(`${p.path} is not a page in ${pin.sha}`);
+      else if (e.sha !== p.blobSha) mismatches.push(`${p.path} is blob ${e.sha}, the pin says ${p.blobSha}`);
+    }
+    if (mismatches.length) throw new ExtractError(`pinned pages do not match: ${mismatches.join('; ')}`, 1);
+    const pinned = new Set(pin.pages.map((p) => p.path));
+
+    const pages = [];
+    for (const e of entries) {
+      if (onlyPinned && !pinned.has(e.path)) continue;
+      const buf = reader.read('blob', e.sha);
+      let reason;
+      let raw;
+      if (buf === null) reason = 'too-large';
+      else if (buf.length > MAX_PAGE_BYTES) reason = 'too-large';
+      else {
+        try {
+          raw = UTF8.decode(buf);
+        } catch {
+          reason = 'invalid-utf8';
+        }
+      }
+      if (reason) {
+        if (pinned.has(e.path)) throw new ExtractError(`pinned page ${e.path} cannot be read (${reason})`, 1);
+        skipped.push({ path: e.path, blobSha: e.sha, reason, bytes: buf === null ? undefined : buf.length });
+        continue;
+      }
+      const clean = sanitize(raw);
+      const parsed = parsePage(e.path, clean.text);
+      pages.push({
+        path: e.path,
+        blobSha: e.sha,
+        bytes: buf.length,
+        ...parsed,
+        sanitized: { htmlComments: clean.htmlComments, invisibleChars: clean.invisibleChars },
+      });
+    }
+    skipped.sort((a, b) => byString(a.path, b.path));
+
+    const content = { pages, skipped };
+    const contentSha256 = createHash('sha256').update(JSON.stringify(content)).digest('hex');
+    return {
+      schema: MANIFEST_SCHEMA,
+      source: { repo: pin.repo, sha: pin.sha, date: pin.date, license: pin.license, pagesDir: pin.pagesDir },
+      provenance: {
+        inputs: { repo: `https://github.com/${pin.repo}`, sha: pin.sha, pagesDir: pin.pagesDir, onlyPinned },
+        transformation: { tool: TOOL, version: VERSION, limits: { maxPageBytes: MAX_PAGE_BYTES, maxUrlChars: MAX_URL_CHARS, maxFieldChars: MAX_FIELD_CHARS } },
+        contentSha256,
+      },
+      ...content,
+    };
+  } finally {
+    reader.close();
+  }
 }
 
 export const serialize = (obj) => `${JSON.stringify(obj, null, 2)}\n`;
@@ -942,7 +1316,7 @@ export function parseManifest(text, label = 'manifest') {
   } catch (err) {
     throw new ExtractError(`${label} is not valid JSON: ${err.message}`);
   }
-  if (!m || m.schema !== MANIFEST_SCHEMA || !Array.isArray(m.pages) || !m.source || typeof m.source.sha !== 'string') {
+  if (!m || m.schema !== MANIFEST_SCHEMA || !Array.isArray(m.pages) || !Array.isArray(m.skipped) || !m.source || typeof m.source.sha !== 'string' || typeof m.source.repo !== 'string') {
     throw new ExtractError(`${label} is not a ${MANIFEST_SCHEMA} manifest`);
   }
   for (const p of m.pages) {
@@ -954,6 +1328,15 @@ export function parseManifest(text, label = 'manifest') {
 const rowKey = (r) => JSON.stringify([r.claim, r.source, r.status]);
 const stripRow = (r) => ({ claim: r.claim, source: r.source, status: r.status });
 
+const same = (x, y) => JSON.stringify(x ?? null) === JSON.stringify(y ?? null);
+const fromTo = (x, y) => (same(x, y) ? undefined : { from: x ?? null, to: y ?? null });
+const linkClass = (l) => ({ kind: l.kind, id: l.id, edition: l.edition });
+const skipKey = (s) => JSON.stringify([s.path, s.blobSha, s.reason]);
+
+// Differences between two manifests: source repo, pages and skipped entries
+// added/removed and, per page in both, blob SHA, title, banner, headings,
+// next, links added/removed or reclassified (kind, id, edition), register
+// rows added/removed and register errors.
 export function diffManifests(a, b) {
   const pa = new Map(a.pages.map((p) => [p.path, p]));
   const pb = new Map(b.pages.map((p) => [p.path, p]));
@@ -963,29 +1346,44 @@ export function diffManifests(a, b) {
   for (const path of [...pa.keys()].filter((k) => pb.has(k)).sort(byString)) {
     const x = pa.get(path);
     const y = pb.get(path);
-    const xl = new Set(x.links.map((l) => l.url));
-    const yl = new Set(y.links.map((l) => l.url));
+    const xl = new Map(x.links.map((l) => [l.url, l]));
+    const yl = new Map(y.links.map((l) => [l.url, l]));
     const xr = new Map((x.register?.rows ?? []).map((r) => [rowKey(r), r]));
     const yr = new Map((y.register?.rows ?? []).map((r) => [rowKey(r), r]));
     const entry = {
       path,
-      blobSha: x.blobSha !== y.blobSha ? { from: x.blobSha, to: y.blobSha } : undefined,
-      banner: (x.banner?.text ?? null) !== (y.banner?.text ?? null) ? { from: x.banner?.text ?? null, to: y.banner?.text ?? null } : undefined,
-      linksAdded: y.links.filter((l) => !xl.has(l.url)).map((l) => ({ url: l.url, kind: l.kind, id: l.id })),
-      linksRemoved: x.links.filter((l) => !yl.has(l.url)).map((l) => ({ url: l.url, kind: l.kind, id: l.id })),
+      blobSha: fromTo(x.blobSha, y.blobSha),
+      title: fromTo(x.title, y.title),
+      banner: fromTo(x.banner?.text, y.banner?.text),
+      headings: fromTo(x.headings, y.headings),
+      next: fromTo(x.next, y.next),
+      linksAdded: y.links.filter((l) => !xl.has(l.url)).map((l) => ({ url: l.url, ...linkClass(l) })),
+      linksRemoved: x.links.filter((l) => !yl.has(l.url)).map((l) => ({ url: l.url, ...linkClass(l) })),
+      linksReclassified: x.links
+        .filter((l) => yl.has(l.url) && !same(linkClass(l), linkClass(yl.get(l.url))))
+        .map((l) => ({ url: l.url, from: linkClass(l), to: linkClass(yl.get(l.url)) })),
       registerAdded: [...yr.keys()].filter((k) => !xr.has(k)).sort(byString).map((k) => stripRow(yr.get(k))),
       registerRemoved: [...xr.keys()].filter((k) => !yr.has(k)).sort(byString).map((k) => stripRow(xr.get(k))),
+      registerErrors: fromTo(x.register?.errors, y.register?.errors),
     };
-    const any = entry.blobSha || entry.banner || entry.linksAdded.length || entry.linksRemoved.length || entry.registerAdded.length || entry.registerRemoved.length;
+    const any =
+      entry.blobSha || entry.title || entry.banner || entry.headings || entry.next || entry.registerErrors ||
+      entry.linksAdded.length || entry.linksRemoved.length || entry.linksReclassified.length ||
+      entry.registerAdded.length || entry.registerRemoved.length;
     if (any) changed.push(entry);
   }
+  const xs = new Map((a.skipped ?? []).map((s) => [skipKey(s), s]));
+  const ys = new Map((b.skipped ?? []).map((s) => [skipKey(s), s]));
   const ver = (m) => m.provenance?.transformation?.version ?? null;
   return {
     schema: DIFF_SCHEMA,
     from: { repo: a.source.repo, sha: a.source.sha, extractorVersion: ver(a) },
     to: { repo: b.source.repo, sha: b.source.sha, extractorVersion: ver(b) },
+    repoChanged: a.source.repo !== b.source.repo,
     pagesAdded,
     pagesRemoved,
+    skippedAdded: [...ys.keys()].filter((k) => !xs.has(k)).sort(byString).map((k) => ys.get(k)),
+    skippedRemoved: [...xs.keys()].filter((k) => !ys.has(k)).sort(byString).map((k) => xs.get(k)),
     changed,
   };
 }
