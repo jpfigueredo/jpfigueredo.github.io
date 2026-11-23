@@ -114,10 +114,12 @@ página cita: links classificados (`rfc`, `nist`, `fips`, `attack`, `cisa`, `ven
 canônico quando existe (`RFC 8446`, `FIPS 197`, `SP 800-38D`, `T1110.001`), título, banner de status,
 cabeçalhos, linhas da tabela "Claims register" e os "Next:". Sem dependências e sem rede.
 
-O conteúdo da fonte é tratado como não confiável: o extrator não clona nem executa nada do repositório,
-confere `git rev-parse HEAD` contra o pino e lê os blobs do commit fixado (`git ls-tree`/`git cat-file`),
-nunca o worktree; remove caracteres invisíveis e de controle e comentários HTML antes de extrair; limita o
-tamanho por página; só guarda URLs `http(s)`. Detalhes no cabeçalho do script.
+O conteúdo da fonte e o próprio clone são tratados como não confiáveis: o extrator não clona nem executa
+nada do repositório e não roda git dentro do clone nem lê o config dele (lê os objetos por um repo bare
+temporário com `alternates`, com ambiente mínimo); confere o HEAD contra o pino e recalcula o SHA-1 do
+commit, das trees até `pagesDir` e de cada página; remove conteúdo oculto (comentários HTML, `<?...?>`,
+`<!X...>`, CDATA) e caracteres invisíveis e de controle antes de extrair; limita o tamanho por página; só
+guarda URLs `http(s)`, depois de decodificar entidades. Detalhes no cabeçalho do script.
 
 ### Uso
 
