@@ -47,8 +47,11 @@ import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathS
 import { tmpdir } from 'node:os';
 import { join, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { codeSpans, fenceStep, maskCodeSpans, splitCells, startsTable, stripHidden } from './lib/markdown-hidden.mjs';
 
-export const VERSION = '1.1.0';
+export { stripHidden };
+
+export const VERSION = '1.2.0';
 export const TOOL = 'extract-references';
 export const MANIFEST_SCHEMA = 'reference-manifest/1';
 export const DIFF_SCHEMA = 'reference-manifest-diff/1';
@@ -95,148 +98,6 @@ export function isInvisible(cp) {
   return false;
 }
 
-// Hidden constructs: content that a Markdown renderer passes through as raw
-// HTML and a browser does not show. `close: null` means the opener is a whole
-// construct by itself (`<!-->` and `<!--->` are empty comments).
-function hiddenOpenerAt(s, i) {
-  if (s.startsWith('<!--', i)) {
-    if (s.startsWith('<!-->', i)) return { len: 5, close: null };
-    if (s.startsWith('<!--->', i)) return { len: 6, close: null };
-    return { len: 4, close: '-->' };
-  }
-  if (s.startsWith('<![CDATA[', i)) return { len: 9, close: ']]>' };
-  if (s.startsWith('<?', i)) return { len: 2, close: '?>' };
-  if (s[i + 1] === '!' && /^[A-Za-z]$/.test(s[i + 2] ?? '')) return { len: 2, close: '>' };
-  return null;
-}
-
-// Prefix after which an opener counts as the start of an HTML block:
-// blockquote markers and up to three spaces.
-const BLOCK_PREFIX = /^(?: {0,3}>)* {0,3}/;
-const PARAGRAPH_END = /\n[ \t]*\n/g;
-
-// Removes HTML comments, processing instructions (`<?...?>`), declarations
-// (`<!X...>`) and CDATA sections, following where a Markdown renderer would
-// see them:
-//   - nothing inside a fenced code block or an inline code span is touched;
-//   - an opener at the start of a line (an HTML block) hides everything up to
-//     its terminator, or to the end of the page when there is none;
-//   - an opener in the middle of a line hides text only when its terminator
-//     comes before the end of the paragraph; otherwise it is literal text.
-// Newlines inside a removed range are kept, so line numbers still match the
-// source. Linear: each `<` is looked at once and the searches for a
-// terminator or a paragraph end are cached per terminator.
-export function stripHidden(text) {
-  const lines = text.split('\n');
-  const starts = [];
-  let offset = 0;
-  for (const l of lines) {
-    starts.push(offset);
-    offset += l.length + 1;
-  }
-  const cuts = [];
-  const closeCache = new Map();
-  const findClose = (close, from) => {
-    const c = closeCache.get(close);
-    if (c && from >= c.from && (c.at === -1 || from <= c.at)) return c.at;
-    const at = text.indexOf(close, from);
-    closeCache.set(close, { from, at });
-    return at;
-  };
-  let paraCache = null;
-  const paragraphEnd = (from) => {
-    if (paraCache && from >= paraCache.from && from <= paraCache.at) return paraCache.at;
-    PARAGRAPH_END.lastIndex = from;
-    const m = PARAGRAPH_END.exec(text);
-    const at = m ? m.index : text.length;
-    paraCache = { from, at };
-    return at;
-  };
-
-  let fence = null;
-  let block = null; // { start, close }
-  let consumedTo = 0; // absolute position up to which text is already removed
-  for (let li = 0; li < lines.length; li += 1) {
-    const line = lines[li];
-    const lineStart = starts[li];
-    const lineEnd = lineStart + line.length;
-    if (consumedTo > lineEnd) continue;
-    let col = Math.max(0, consumedTo - lineStart);
-
-    if (block) {
-      const at = findClose(block.close, Math.max(block.start, lineStart));
-      if (at === -1 || at >= lineEnd) continue;
-      cuts.push([block.start, at + block.close.length]);
-      col = at + block.close.length - lineStart;
-      block = null;
-    } else if (fence) {
-      const t = line.trim();
-      const indent = line.length - line.trimStart().length;
-      if (indent <= 3 && t[0] === fence[0] && t.length >= fence.length && /^(?:`{3,}|~{3,})$/.test(t)) fence = null;
-      continue;
-    } else if (col === 0) {
-      const f = FENCE.exec(line);
-      if (f) {
-        fence = f[1];
-        continue;
-      }
-    }
-
-    const masked = maskCodeSpans(line);
-    const blockCol = col === 0 ? BLOCK_PREFIX.exec(line)[0].length : -1;
-    let j = col;
-    while (j < line.length) {
-      const k = masked.indexOf('<', j);
-      if (k === -1) break;
-      const op = hiddenOpenerAt(line, k);
-      if (!op) {
-        j = k + 1;
-        continue;
-      }
-      const abs = lineStart + k;
-      if (op.close === null) {
-        cuts.push([abs, abs + op.len]);
-        j = k + op.len;
-        continue;
-      }
-      const at = findClose(op.close, abs + op.len);
-      if (k === blockCol) {
-        if (at !== -1 && at < lineEnd) {
-          cuts.push([abs, at + op.close.length]);
-          j = at + op.close.length - lineStart;
-          continue;
-        }
-        block = { start: abs, close: op.close };
-        break;
-      }
-      if (at !== -1 && at < paragraphEnd(abs)) {
-        const end = at + op.close.length;
-        cuts.push([abs, end]);
-        if (end > lineEnd) {
-          consumedTo = end;
-          break;
-        }
-        j = end - lineStart;
-        continue;
-      }
-      j = k + 1;
-    }
-  }
-  if (block) cuts.push([block.start, text.length]);
-
-  if (cuts.length === 0) return { text, removed: 0 };
-  const out = [];
-  let at = 0;
-  for (const [s, e] of cuts) {
-    out.push(text.slice(at, s));
-    const hidden = text.slice(s, e);
-    for (let n = hidden.indexOf('\n'); n !== -1; n = hidden.indexOf('\n', n + 1)) out.push('\n');
-    at = e;
-  }
-  out.push(text.slice(at));
-  return { text: out.join(''), removed: cuts.length };
-}
-
 function removeInvisible(text) {
   let count = 0;
   const kept = [];
@@ -277,47 +138,6 @@ export function sanitize(raw) {
 }
 
 // ------------------------------------------------------------ inline Markdown
-
-// Replaces inline code spans with spaces of the same length, so links and
-// URLs inside code are not read. A span is a run of N backticks closed by the
-// next run of exactly N backticks (CommonMark). Linear: runs are collected in
-// one pass and matched by length with a queue per length.
-export function maskCodeSpans(line) {
-  if (!line.includes('`')) return line;
-  const runs = [];
-  for (let i = 0; i < line.length; ) {
-    if (line[i] !== '`') {
-      i += 1;
-      continue;
-    }
-    let j = i;
-    while (j < line.length && line[j] === '`') j += 1;
-    runs.push([i, j - i]);
-    i = j;
-  }
-  const byLength = new Map();
-  runs.forEach(([, len], idx) => {
-    if (!byLength.has(len)) byLength.set(len, []);
-    byLength.get(len).push(idx);
-  });
-  const cursor = new Map();
-  const chars = line.split('');
-  let consumedUntil = -1;
-  for (let r = 0; r < runs.length; r += 1) {
-    if (r <= consumedUntil) continue;
-    const [start, len] = runs[r];
-    const list = byLength.get(len);
-    let c = cursor.get(len) ?? 0;
-    while (c < list.length && list[c] <= r) c += 1;
-    cursor.set(len, c);
-    if (c >= list.length) continue;
-    const closeIdx = list[c];
-    const [closeStart] = runs[closeIdx];
-    for (let k = start; k < closeStart + len; k += 1) chars[k] = ' ';
-    consumedUntil = closeIdx;
-  }
-  return chars.join('');
-}
 
 // Finds inline links and images `[text](dest "title")` in one line. Linear:
 // the backward search for `[` never goes behind the previous `](` examined,
@@ -450,8 +270,10 @@ const NAMED_ENTITIES = new Map([
   ['quest', '?'], ['num', '#'], ['percnt', '%'], ['equals', '='], ['plus', '+'], ['lowbar', '_'],
   ['hyphen', '-'], ['dash', '-'], ['Tab', String.fromCharCode(9)], ['NewLine', String.fromCharCode(10)],
 ]);
-const ENTITY = /&(?:#([0-9]{1,7})|#[xX]([0-9a-fA-F]{1,6})|([A-Za-z][A-Za-z0-9]{1,31}));/g;
-const BACKSLASH_ESCAPE = /\\([!-/:-@[-`{-~])/g;
+// Backslash escapes and character references in one pass, so the output of
+// one is never read again by the other (`\\&#58;` stays `&#58;`, `&amp;#58;`
+// stays `&#58;`).
+const ESCAPE_OR_ENTITY = /\\([!-/:-@[-`{-~])|&(?:#([0-9]{1,7})|#[xX]([0-9a-fA-F]{1,6})|([A-Za-z][A-Za-z0-9]{1,31}));/g;
 
 // What a Markdown renderer makes of a link destination: backslash escapes
 // and character references decoded (so `javascript&#58;` is seen as
@@ -460,7 +282,8 @@ const BACKSLASH_ESCAPE = /\\([!-/:-@[-`{-~])/g;
 export function decodeTarget(raw) {
   if (!raw.includes('&') && !raw.includes('\\')) return raw;
   let unknown = false;
-  const decoded = raw.replace(BACKSLASH_ESCAPE, '$1').replace(ENTITY, (_, dec, hex, name) => {
+  const decoded = raw.replace(ESCAPE_OR_ENTITY, (_, escaped, dec, hex, name) => {
+    if (escaped !== undefined) return escaped;
     if (name !== undefined) {
       const v = NAMED_ENTITIES.get(name);
       if (v === undefined) unknown = true;
@@ -481,17 +304,30 @@ function trimTrailingPunctuation(url) {
 const HTML_TAG = /<\/?[A-Za-z][A-Za-z0-9-]{0,30}(?:\s[^<>]{0,500})?\/?>/g;
 
 // Plain text of a Markdown fragment: links become their text, HTML tags and
-// emphasis markers go, whitespace collapses; capped at `max` characters.
+// emphasis markers go outside code spans, code spans keep their content as
+// written (`<forward>`, `*.tfvars`), whitespace collapses; capped at `max`.
 export function plainText(fragment, max = MAX_FIELD_CHARS) {
   const pieces = [];
   let at = 0;
-  for (const { start, end, text, image } of scanInlineLinks(fragment)) {
-    pieces.push(fragment.slice(at, start), image ? '' : text);
+  for (const { start, end, text, image } of scanInlineLinks(maskCodeSpans(fragment))) {
+    const textStart = start + (image ? 2 : 1);
+    pieces.push(fragment.slice(at, start), image ? '' : fragment.slice(textStart, textStart + text.length));
     at = end;
   }
   pieces.push(fragment.slice(at));
-  let s = pieces.join('');
-  s = s.replace(HTML_TAG, ' ').replace(/\*+|__|`/g, '').replace(/\s+/g, ' ').trim();
+  const joined = pieces.join('');
+  const clean = (t) => t.replace(HTML_TAG, ' ').replace(/\*+|__|`/g, '');
+  const out = [];
+  at = 0;
+  for (const { start, end, open } of codeSpans(joined)) {
+    out.push(clean(joined.slice(at, start)));
+    let code = joined.slice(start + open, end - open);
+    if (code.length > 1 && code.startsWith(' ') && code.endsWith(' ') && code.trim() !== '') code = code.slice(1, -1);
+    out.push(code);
+    at = end;
+  }
+  out.push(clean(joined.slice(at)));
+  const s = out.join('').replace(/\s+/g, ' ').trim();
   return s.length > max ? `${s.slice(0, max)} [truncated]` : s;
 }
 
@@ -519,7 +355,7 @@ function trimC0(s) {
 }
 
 // Classifies one link target. Returns
-//   { type: 'url', url, kind, id?, edition? }   an http(s) URL;
+//   { type: 'url', url, kind, id?, revision?, stage? }   an http(s) URL;
 //   { type: 'page', path }                      a relative link (resolved by the caller);
 //   { type: 'rejected', reason }                anything else.
 export function classifyTarget(rawTarget) {
@@ -557,14 +393,29 @@ function kindOf(u) {
     return { kind: 'rfc' };
   }
   if (hostIs(host, 'nist.gov') || ((host === 'doi.org' || host === 'dx.doi.org') && segs[0] === '10.6028')) {
+    if (host === 'nvd.nist.gov') return cveId(host, segs, u.searchParams) ?? { kind: 'nist' };
     const doc = nistDocument(host, segs);
     if (doc) return doc;
     return { kind: 'nist' };
   }
   if (host === 'attack.mitre.org') return { kind: 'attack', ...attackId(segs) };
+  const cve = cveId(host, segs, u.searchParams);
+  if (cve) return cve;
   if (hostIs(host, 'cisa.gov') || hostIs(host, 'us-cert.gov')) return { kind: 'cisa', ...cisaId(segs) };
   if (VENDOR_HOSTS.includes(host) || VENDOR_DOMAINS.some((d) => hostIs(host, d))) return { kind: 'vendor' };
   return { kind: 'other' };
+}
+
+// CVE records: nvd.nist.gov/vuln/detail/CVE-..., cve.org/CVERecord?id=CVE-...,
+// cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-...
+const CVE_RE = /^CVE-\d{4}-\d{4,7}$/i;
+function cveId(host, segs, params) {
+  let cand;
+  if (host === 'nvd.nist.gov' && segs[0] === 'vuln' && segs[1] === 'detail') cand = segs[2];
+  else if (host === 'cve.org') cand = params.get('id') ?? undefined;
+  else if (host === 'cve.mitre.org') cand = params.get('name') ?? undefined;
+  else return null;
+  return cand && CVE_RE.test(cand) ? { kind: 'cve', id: cand.toUpperCase() } : { kind: 'cve' };
 }
 
 function safeDecode(s) {
@@ -576,7 +427,7 @@ function safeDecode(s) {
 }
 
 // NIST publication ids. Work-level id (`SP 800-57 Part 1`, `FIPS 197`,
-// `IR 8547`); revision and stage go to `edition` (`Rev. 5`, `Rev. 3 ipd`).
+// `IR 8547`); revision and stage go to their own fields (`5`, `ipd`).
 function nistDocument(host, segs) {
   // doi.org/10.6028/NIST.SP.800-57pt1r5 and nvlpubs .../NIST.SP.800-38D.pdf
   const last = segs[segs.length - 1] ?? '';
@@ -585,6 +436,13 @@ function nistDocument(host, segs) {
   // nvlpubs .../Legacy/SP/nistspecialpublication800-34r1.pdf
   const legacy = /^nistspecialpublication800-(\d{1,4})([a-z])?(?:r(\d{1,2}))?\.pdf$/i.exec(last);
   if (legacy) return { kind: 'nist', id: spId(legacy[1], legacy[2]), ...edition(legacy[3]) };
+  // pages.nist.gov/800-63-4/sp800-63b.html: the HTML edition of SP 800-63B-4
+  if (host === 'pages.nist.gov') {
+    const rev = /^800-63-(\d{1,2})$/.exec(segs[0] ?? '');
+    if (!rev) return null;
+    const vol = /^sp800-63([a-c])?(?:\.html)?$/i.exec(segs[1] ?? '');
+    return { kind: 'nist', id: `SP 800-63${vol?.[1] ? vol[1].toUpperCase() : ''}-${rev[1]}` };
+  }
   // csrc.nist.gov/pubs/<series>/<...>/<stage>
   if (segs[0] === 'pubs' && segs.length >= 3) return fromPubsPath(segs.slice(1));
   // csrc.nist.gov/publications/detail/<series>/<name>/[rev-N]/<stage>
@@ -598,12 +456,14 @@ function stageLabel(stage) {
   return stage && stage !== 'final' && !stage.startsWith('upd') ? stage : '';
 }
 
+// Revision and stage of a publication, as separate fields: `revision: '5'`,
+// `stage: 'ipd'`. A final publication has no stage.
 function edition(rev, stage) {
-  const parts = [];
-  if (rev) parts.push(`Rev. ${rev}`);
+  const out = {};
+  if (rev) out.revision = rev;
   const st = stageLabel(stage);
-  if (st) parts.push(st);
-  return parts.length ? { edition: parts.join(' ') } : {};
+  if (st) out.stage = st;
+  return out;
 }
 
 function spId(num, letter, part) {
@@ -695,7 +555,7 @@ function attackId(segs) {
     ver = s[1].toLowerCase();
     s = s.slice(2);
   }
-  const versioned = ver ? { edition: ver } : {};
+  const versioned = ver ? { revision: ver } : {};
   const re = ATTACK_SECTIONS[(s[0] ?? '').toLowerCase()];
   const code = (s[1] ?? '').toUpperCase();
   if (!re || !re.test(code)) return versioned;
@@ -742,8 +602,9 @@ export function statusTags(status) {
     }
   };
   take('listing read', 'listing-read');
-  take('\\b(?:not|never) read\\b', 'not-read');
-  take('\\b(?:not|never) run\\b|\\bnothing (?:was )?run\\b', 'not-run');
+  // "not read", "never read", "not yet read", "not re-read", "not reread"
+  take('\\b(?:not|never)(?: yet)? (?:re-?)?read\\b', 'not-read');
+  take('\\b(?:not|never)(?: yet)? (?:re-?)?run\\b|\\bnothing (?:was )?run\\b', 'not-run');
   take('\\bunverified\\b|\\bnot verified\\b', 'unverified');
   take('\\best\\.', 'est');
   take('\\bgeneral knowledge\\b', 'general-knowledge');
@@ -756,9 +617,9 @@ export function statusTags(status) {
 
 // ------------------------------------------------------------ page parser
 
-const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 const ATX = /^ {0,3}(#{1,6})(?:[ \t]|$)/;
 const NEXT = /^(?:>[ \t]?)?(?:\*\*|__)?next(?::(?:\*\*|__)?|(?:\*\*|__):)/i;
+const MAX_FRONT_MATTER_LINES = 200;
 
 function headingText(line, hashes) {
   let rest = line.trimStart().slice(hashes.length).trim();
@@ -769,122 +630,138 @@ function headingText(line, hashes) {
   return rest;
 }
 
-function splitRow(line) {
-  let s = line.trim();
-  if (s.startsWith('|')) s = s.slice(1);
-  if (s.endsWith('|') && !s.endsWith('\\|')) s = s.slice(0, -1);
-  const cells = [];
-  let cur = '';
-  for (let i = 0; i < s.length; i += 1) {
-    if (s[i] === '\\' && s[i + 1] === '|') {
-      cur += '|';
-      i += 1;
-    } else if (s[i] === '|') {
-      cells.push(cur.trim());
-      cur = '';
-    } else cur += s[i];
-  }
-  cells.push(cur.trim());
-  return cells;
-}
-
-const isSeparatorRow = (cells) => cells.length > 0 && cells.every((c) => /^:?-{1,200}:?$/.test(c));
-
 const byString = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+// Number of lines of a YAML front matter block (`---` ... `---` or `...`) at
+// the top of the page, or 0. Front matter is metadata, not page text: its
+// lines are not read.
+function frontMatterLines(lines) {
+  if (lines[0] !== '---') return 0;
+  const last = Math.min(lines.length, MAX_FRONT_MATTER_LINES);
+  for (let k = 1; k < last; k += 1) if (lines[k] === '---' || lines[k] === '...') return k + 1;
+  return 0;
+}
 
 // Parses one sanitized page. `path` is its repository path (for resolving
 // relative links).
+//
+// "Claims register" table: the first table after a heading "Claims register",
+// up to the next heading of the same or a higher level. Columns are named by
+// their header cell. `claim` is required (without it no row is kept), `source`
+// and `status` are read when present (null otherwise), any other column goes
+// to `row.extra`. A header other than Claim | Source | Status gives one
+// `missing-column` error per missing name; a row whose cell count differs
+// from the header (cells split as GitHub does) is a `cell-count` error and
+// keeps no row. Either way the links in every cell are kept: in the page's
+// `links[]` (with the register `columns` they came from) and, for kept rows,
+// in `row.links` with their column. `--strict` fails on any register error.
 export function parsePage(path, text) {
   const lines = text.split('\n');
+  const skipTo = frontMatterLines(lines);
   const headings = [];
   const linkCounts = new Map();
   const rejected = new Map();
   const pageLinks = new Set();
+  const fileLinks = new Set();
   const next = [];
   const nextSeen = new Set();
   let banner = null;
-  let fence = null;
   let register = null;
-  let regState = null; // { level, phase: 'seek' | 'header' | 'sep' | 'rows' | 'done', cols }
+  let reg = null; // { level, phase: 'seek' | 'sep' | 'rows' | 'done', headingLine, columns, idx }
 
   // Reference definitions first (they may come after their use); the first
   // definition of a label wins. Definition lines are not read as text.
   const refs = new Map();
   const defLines = new Set();
-  let preFence = null;
-  lines.forEach((line, idx) => {
-    if (preFence) {
-      const t = line.trim();
-      if (line.length - line.trimStart().length <= 3 && t[0] === preFence[0] && t.length >= preFence.length && /^(?:`{3,}|~{3,})$/.test(t)) preFence = null;
-      return;
-    }
-    const f = FENCE.exec(line);
-    if (f) {
-      preFence = f[1];
-      return;
-    }
-    const def = refDefinition(line);
+  let fence = null;
+  for (let idx = skipTo; idx < lines.length; idx += 1) {
+    const step = fenceStep(fence, lines[idx]);
+    fence = step.fence;
+    if (step.code) continue;
+    const def = refDefinition(lines[idx]);
     if (def) {
       if (!refs.has(def.label)) refs.set(def.label, def.target);
       defLines.add(idx);
     }
-  });
+  }
 
-  const addTarget = ({ raw, decode }, sink) => {
+  const count = (map, key) => map.set(key, (map.get(key) ?? 0) + 1);
+  const addTarget = ({ raw, decode }, sink, column) => {
     let target = raw;
     if (decode) {
       target = decodeTarget(raw);
-      if (target === null) {
-        rejected.set('entity', (rejected.get('entity') ?? 0) + 1);
-        return;
-      }
-      for (const ch of target) {
-        if (isInvisible(ch.codePointAt(0))) {
-          rejected.set('invisible', (rejected.get('invisible') ?? 0) + 1);
-          return;
-        }
-      }
+      if (target === null) return count(rejected, 'entity');
+      for (const ch of target) if (isInvisible(ch.codePointAt(0))) return count(rejected, 'invisible');
     }
     const c = classifyTarget(target);
     if (c.type === 'url') {
-      const key = c.url;
-      const prev = linkCounts.get(key);
-      if (prev) prev.count += 1;
-      else linkCounts.set(key, { url: c.url, kind: c.kind, id: c.id, edition: c.edition, count: 1 });
-      sink?.urls.push(c);
+      let rec = linkCounts.get(c.url);
+      if (!rec) {
+        rec = { url: c.url, kind: c.kind, id: c.id, revision: c.revision, stage: c.stage, count: 0, columns: new Set() };
+        linkCounts.set(c.url, rec);
+      }
+      rec.count += 1;
+      if (column !== undefined) rec.columns.add(column);
+      sink?.urls.push({ column, url: c.url, kind: c.kind, id: c.id, revision: c.revision, stage: c.stage });
     } else if (c.type === 'page') {
       const p = resolvePageLink(path, c.path);
-      if (p) {
+      if (!p) return undefined;
+      if (p.toLowerCase().endsWith('.md')) {
         pageLinks.add(p);
         sink?.pages.push(p);
-      }
-    } else {
-      rejected.set(c.reason, (rejected.get(c.reason) ?? 0) + 1);
-    }
+      } else fileLinks.add(p);
+    } else count(rejected, c.reason);
+    return undefined;
   };
 
   const finishRegister = () => {
-    if (regState?.phase === 'seek') register.errors.push({ line: regState.headingLine, reason: 'no-table' });
-    if (regState?.phase === 'sep') register.errors.push({ line: regState.headingLine, reason: 'no-separator' });
-    regState = null;
+    if (reg?.phase === 'seek') register.errors.push({ line: reg.headingLine, reason: 'no-table' });
+    reg = null;
   };
 
-  for (let idx = 0; idx < lines.length; idx += 1) {
+  // One register row: every cell's links are kept; the row itself only when
+  // its cell count matches the header and it has a claim.
+  const registerRow = (line, lineNo) => {
+    const cells = splitCells(line);
+    const { columns, idx } = reg;
+    const sink = { urls: [], pages: [] };
+    cells.forEach((cell, i) => {
+      for (const t of linkTargets(cell, refs)) addTarget(t, sink, columns[i] ?? `cell-${i + 1}`);
+    });
+    if (cells.length !== columns.length) {
+      register.errors.push({ line: lineNo, reason: 'cell-count', expected: columns.length, got: cells.length });
+      return;
+    }
+    if (idx.claim === -1) return;
+    const claim = plainText(cells[idx.claim]);
+    if (claim === '') {
+      register.errors.push({ line: lineNo, reason: 'empty-claim' });
+      return;
+    }
+    const status = idx.status === -1 ? null : plainText(cells[idx.status]);
+    const extra = {};
+    columns.forEach((name, i) => {
+      if (i !== idx.claim && i !== idx.source && i !== idx.status) extra[name] = plainText(cells[i]);
+    });
+    register.rows.push({
+      line: lineNo,
+      claim,
+      source: idx.source === -1 ? null : plainText(cells[idx.source]),
+      status,
+      statusTags: status === null ? [] : statusTags(status),
+      extra: Object.keys(extra).length ? extra : undefined,
+      links: dedupeRowLinks(sink.urls),
+    });
+  };
+
+  fence = null;
+  for (let idx = skipTo; idx < lines.length; idx += 1) {
     const lineNo = idx + 1;
     const line = lines[idx];
 
-    const f = FENCE.exec(line);
-    if (fence) {
-      const t = line.trim();
-      const indent = line.length - line.trimStart().length;
-      if (indent <= 3 && t[0] === fence[0] && t.length >= fence.length && /^(?:`{3,}|~{3,})$/.test(t)) fence = null;
-      continue;
-    }
-    if (f) {
-      fence = f[1];
-      continue;
-    }
-
+    const step = fenceStep(fence, line);
+    fence = step.fence;
+    if (step.code) continue;
     if (defLines.has(idx)) continue;
 
     const h = ATX.exec(line);
@@ -892,10 +769,10 @@ export function parsePage(path, text) {
       const level = h[1].length;
       const textH = plainText(headingText(line, h[1]), MAX_FIELD_CHARS);
       headings.push({ level, text: textH });
-      if (regState && level <= regState.level) finishRegister();
+      if (reg && level <= reg.level) finishRegister();
       if (!register && textH.toLowerCase() === REGISTER_HEADING) {
-        register = { line: lineNo, rows: [], errors: [] };
-        regState = { level, phase: 'seek', headingLine: lineNo };
+        register = { line: lineNo, columns: null, rows: [], errors: [] };
+        reg = { level, phase: 'seek', headingLine: lineNo };
       }
       continue;
     }
@@ -912,55 +789,33 @@ export function parsePage(path, text) {
     }
 
     // Claims register table.
-    if (regState && regState.phase !== 'done') {
+    if (reg && reg.phase !== 'done') {
       const isRow = line.trim().startsWith('|');
-      if (regState.phase === 'seek' && isRow) regState.phase = 'header';
-      if (regState.phase === 'header') {
-        const cells = splitRow(line).map((c) => plainText(c).toLowerCase());
-        const cols = { claim: cells.indexOf('claim'), source: cells.indexOf('source'), status: cells.indexOf('status'), count: cells.length };
-        for (const name of ['claim', 'source', 'status']) {
-          if (cols[name] === -1) register.errors.push({ line: lineNo, reason: 'missing-column', column: name });
-        }
-        regState.cols = cols;
-        regState.phase = cols.claim === -1 || cols.status === -1 ? 'done' : 'sep';
-        continue;
-      }
-      if (regState.phase === 'sep') {
-        if (!isRow || !isSeparatorRow(splitRow(line))) {
+      if (reg.phase === 'seek' && isRow) {
+        if (!startsTable(line, lines[idx + 1])) {
           register.errors.push({ line: lineNo, reason: 'no-separator' });
-          regState.phase = 'done';
-        } else regState.phase = 'rows';
-        continue;
-      }
-      if (regState.phase === 'rows') {
-        if (!isRow) {
-          regState.phase = 'done';
+          reg.phase = 'done';
         } else {
-          const cells = splitRow(line);
-          const { cols } = regState;
-          if (cells.length !== cols.count) {
-            register.errors.push({ line: lineNo, reason: 'cell-count', expected: cols.count, got: cells.length });
-          } else {
-            const sink = { urls: [], pages: [] };
-            const sourceCell = cols.source === -1 ? '' : cells[cols.source];
-            for (const t of linkTargets(sourceCell, refs)) addTarget(t, sink);
-            for (const t of linkTargets(cells[cols.claim], refs)) addTarget(t);
-            const claim = plainText(cells[cols.claim]);
-            const status = plainText(cells[cols.status]);
-            if (claim === '') register.errors.push({ line: lineNo, reason: 'empty-claim' });
-            else {
-              register.rows.push({
-                line: lineNo,
-                claim,
-                source: plainText(sourceCell),
-                sourceLinks: dedupeUrls(sink.urls),
-                status,
-                statusTags: statusTags(status),
-              });
-            }
+          const columns = splitCells(line).map((c) => plainText(c).toLowerCase());
+          const idxOf = (name) => columns.indexOf(name);
+          reg.columns = columns;
+          reg.idx = { claim: idxOf('claim'), source: idxOf('source'), status: idxOf('status') };
+          register.columns = columns;
+          for (const name of ['claim', 'source', 'status']) {
+            if (reg.idx[name] === -1) register.errors.push({ line: lineNo, reason: 'missing-column', column: name });
           }
+          reg.phase = 'sep';
           continue;
         }
+      } else if (reg.phase === 'sep') {
+        reg.phase = 'rows';
+        continue;
+      } else if (reg.phase === 'rows') {
+        if (isRow) {
+          registerRow(line, lineNo);
+          continue;
+        }
+        reg.phase = 'done';
       }
     }
 
@@ -985,20 +840,24 @@ export function parsePage(path, text) {
     headings,
     links,
     pageLinks: [...pageLinks].sort(byString),
+    fileLinks: [...fileLinks].sort(byString),
     next,
     register,
-    rejectedLinks: [...rejected.entries()].sort((a, b) => byString(a[0], b[0])).map(([reason, count]) => ({ reason, count })),
+    rejectedLinks: [...rejected.entries()].sort((a, b) => byString(a[0], b[0])).map(([reason, n]) => ({ reason, count: n })),
   };
 }
 
-function linkRecord({ url, kind, id, edition: ed, count }) {
-  return { url, kind, id, edition: ed, count };
+function linkRecord({ url, kind, id, revision, stage, count, columns }) {
+  return { url, kind, id, revision, stage, count, columns: columns.size ? [...columns].sort(byString) : undefined };
 }
 
-function dedupeUrls(urls) {
+function dedupeRowLinks(urls) {
   const seen = new Map();
-  for (const u of urls) if (!seen.has(u.url)) seen.set(u.url, { url: u.url, kind: u.kind, id: u.id, edition: u.edition });
-  return [...seen.values()].sort((a, b) => byString(a.url, b.url));
+  for (const u of urls) {
+    const key = JSON.stringify([u.column, u.url]);
+    if (!seen.has(key)) seen.set(key, u);
+  }
+  return [...seen.values()].sort((a, b) => byString(a.column, b.column) || byString(a.url, b.url));
 }
 
 // ------------------------------------------------------------ reading the clone
@@ -1073,28 +932,41 @@ function cloneGitDir(root) {
   return gitDir;
 }
 
+const MAX_REF_FILE_BYTES = 4096;
+const MAX_PACKED_REFS_BYTES = 64 * 1024 * 1024;
+
+// A regular file of the clone's .git (not a symlink, not a directory), at
+// most `max` bytes; null when it does not exist. Its content never goes into
+// an error message.
+function readGitFile(path, max, what) {
+  let st;
+  try {
+    st = lstatSync(path);
+  } catch {
+    return null;
+  }
+  if (!st.isFile()) throw new ExtractError(`${what} of the clone is not a regular file`);
+  if (st.size > max) throw new ExtractError(`${what} of the clone is larger than ${max} bytes`);
+  return readFileSync(path, 'utf8');
+}
+
 // HEAD of the clone, read as files: a detached SHA, or a ref resolved from
 // its loose file or packed-refs.
 function readHead(gitDir) {
-  const head = readFileSync(join(gitDir, 'HEAD'), 'utf8').trim();
+  const text = readGitFile(join(gitDir, 'HEAD'), MAX_REF_FILE_BYTES, 'HEAD');
+  if (text === null) throw new ExtractError('the clone has no HEAD');
+  const head = text.trim();
   if (SHA_RE.test(head)) return head;
   const m = /^ref: (refs\/[A-Za-z0-9._/-]{1,200})$/.exec(head);
-  if (!m || m[1].split('/').includes('..')) throw new ExtractError(`cannot read HEAD of the clone: ${JSON.stringify(head.slice(0, 80))}`);
-  try {
-    const loose = readFileSync(join(gitDir, m[1]), 'utf8').trim();
-    if (SHA_RE.test(loose)) return loose;
-  } catch {
-    // not a loose ref; try packed-refs
+  if (!m || m[1].split('/').includes('..')) throw new ExtractError('HEAD of the clone is neither a SHA nor a ref under refs/');
+  const loose = readGitFile(join(gitDir, m[1]), MAX_REF_FILE_BYTES, 'the ref HEAD points to');
+  if (loose !== null && SHA_RE.test(loose.trim())) return loose.trim();
+  const packed = readGitFile(join(gitDir, 'packed-refs'), MAX_PACKED_REFS_BYTES, 'packed-refs');
+  for (const line of (packed ?? '').split('\n')) {
+    const [sha, name] = line.split(' ');
+    if (name === m[1] && SHA_RE.test(sha)) return sha;
   }
-  try {
-    for (const line of readFileSync(join(gitDir, 'packed-refs'), 'utf8').split('\n')) {
-      const [sha, name] = line.split(' ');
-      if (name === m[1] && SHA_RE.test(sha)) return sha;
-    }
-  } catch {
-    // no packed-refs
-  }
-  throw new ExtractError(`cannot resolve HEAD (${m[1]}) of the clone`);
+  throw new ExtractError('cannot resolve the ref HEAD of the clone points to');
 }
 
 // Replace refs would make git hand out other content under a pinned name.
@@ -1114,13 +986,10 @@ function refuseReplaceRefs(gitDir) {
     }
   };
   walk(join(gitDir, 'refs', 'replace'), 'refs/replace');
-  try {
-    for (const line of readFileSync(join(gitDir, 'packed-refs'), 'utf8').split('\n')) {
-      const name = line.split(' ')[1];
-      if (name?.startsWith('refs/replace/')) found.push(name);
-    }
-  } catch {
-    // no packed-refs
+  const packed = readGitFile(join(gitDir, 'packed-refs'), MAX_PACKED_REFS_BYTES, 'packed-refs');
+  for (const line of (packed ?? '').split('\n')) {
+    const name = line.split(' ')[1];
+    if (name?.startsWith('refs/replace/')) found.push(name);
   }
   if (found.length) throw new ExtractError(`the clone has replace refs (${found.slice(0, 3).join(', ')}); refusing to read it`, 1);
 }
@@ -1153,7 +1022,10 @@ function objectReader(gitDir) {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } catch (err) {
-      if (err.code === 'ENOBUFS') return null;
+      if (err.code === 'ENOBUFS') {
+        if (type === 'blob') return null;
+        throw new ExtractError(`${type} ${sha} is larger than ${MAX_OBJECT_BYTES} bytes`);
+      }
       const stderr = err.stderr ? err.stderr.toString().trim().split('\n').slice(-1)[0] : err.message;
       throw new ExtractError(`git cat-file ${type} ${sha} failed: ${stderr}`);
     }
@@ -1325,18 +1197,59 @@ export function parseManifest(text, label = 'manifest') {
   return m;
 }
 
-const rowKey = (r) => JSON.stringify([r.claim, r.source, r.status]);
-const stripRow = (r) => ({ claim: r.claim, source: r.source, status: r.status });
 
 const same = (x, y) => JSON.stringify(x ?? null) === JSON.stringify(y ?? null);
 const fromTo = (x, y) => (same(x, y) ? undefined : { from: x ?? null, to: y ?? null });
-const linkClass = (l) => ({ kind: l.kind, id: l.id, edition: l.edition });
+const linkClass = (l) => ({ kind: l.kind, id: l.id, revision: l.revision, stage: l.stage });
 const skipKey = (s) => JSON.stringify([s.path, s.blobSha, s.reason]);
+const addedRemoved = (xs, ys) => {
+  const a = new Set(xs ?? []);
+  const b = new Set(ys ?? []);
+  return { added: [...b].filter((v) => !a.has(v)).sort(byString), removed: [...a].filter((v) => !b.has(v)).sort(byString) };
+};
+const rowLinkKey = (l) => JSON.stringify([l.column ?? null, l.url]);
+const errorKey = (e) => JSON.stringify([e.reason, e.column ?? null, e.expected ?? null, e.got ?? null]);
+const errorFromKey = (k) => {
+  const [reason, column, expected, got] = JSON.parse(k);
+  return { reason, column: column ?? undefined, expected: expected ?? undefined, got: got ?? undefined };
+};
+
+// Register rows keyed by claim text plus its occurrence number, so a row that
+// only moved to another line is the same row.
+function rowsByKey(rows) {
+  const seen = new Map();
+  const out = new Map();
+  for (const r of rows ?? []) {
+    const n = seen.get(r.claim) ?? 0;
+    seen.set(r.claim, n + 1);
+    out.set(JSON.stringify([r.claim, n]), r);
+  }
+  return out;
+}
+
+function rowChange(x, y) {
+  const links = addedRemoved((x.links ?? []).map(rowLinkKey), (y.links ?? []).map(rowLinkKey));
+  const parse = (k) => {
+    const [column, url] = JSON.parse(k);
+    return { column, url };
+  };
+  const c = {
+    claim: y.claim,
+    sourceChanged: fromTo(x.source, y.source),
+    statusChanged: fromTo(x.status, y.status),
+    extraChanged: fromTo(x.extra, y.extra),
+    linksAdded: links.added.map(parse),
+    linksRemoved: links.removed.map(parse),
+  };
+  return c.sourceChanged || c.statusChanged || c.extraChanged || c.linksAdded.length || c.linksRemoved.length ? c : null;
+}
 
 // Differences between two manifests: source repo, pages and skipped entries
-// added/removed and, per page in both, blob SHA, title, banner, headings,
-// next, links added/removed or reclassified (kind, id, edition), register
-// rows added/removed and register errors.
+// added/removed and, per page in both: blob SHA, title, banner, headings,
+// next, page and file links, links added/removed or reclassified (kind, id,
+// revision, stage), rejected links, sanitizer counts, register rows
+// added/removed/changed (source text, status, other columns, links per
+// column) and register errors. Line numbers alone are not a change.
 export function diffManifests(a, b) {
   const pa = new Map(a.pages.map((p) => [p.path, p]));
   const pb = new Map(b.pages.map((p) => [p.path, p]));
@@ -1348,8 +1261,11 @@ export function diffManifests(a, b) {
     const y = pb.get(path);
     const xl = new Map(x.links.map((l) => [l.url, l]));
     const yl = new Map(y.links.map((l) => [l.url, l]));
-    const xr = new Map((x.register?.rows ?? []).map((r) => [rowKey(r), r]));
-    const yr = new Map((y.register?.rows ?? []).map((r) => [rowKey(r), r]));
+    const xr = rowsByKey(x.register?.rows);
+    const yr = rowsByKey(y.register?.rows);
+    const pageLinks = addedRemoved(x.pageLinks, y.pageLinks);
+    const fileLinks = addedRemoved(x.fileLinks, y.fileLinks);
+    const errors = addedRemoved((x.register?.errors ?? []).map(errorKey), (y.register?.errors ?? []).map(errorKey));
     const entry = {
       path,
       blobSha: fromTo(x.blobSha, y.blobSha),
@@ -1357,19 +1273,24 @@ export function diffManifests(a, b) {
       banner: fromTo(x.banner?.text, y.banner?.text),
       headings: fromTo(x.headings, y.headings),
       next: fromTo(x.next, y.next),
+      pageLinksAdded: pageLinks.added,
+      pageLinksRemoved: pageLinks.removed,
+      fileLinksAdded: fileLinks.added,
+      fileLinksRemoved: fileLinks.removed,
       linksAdded: y.links.filter((l) => !xl.has(l.url)).map((l) => ({ url: l.url, ...linkClass(l) })),
       linksRemoved: x.links.filter((l) => !yl.has(l.url)).map((l) => ({ url: l.url, ...linkClass(l) })),
       linksReclassified: x.links
         .filter((l) => yl.has(l.url) && !same(linkClass(l), linkClass(yl.get(l.url))))
         .map((l) => ({ url: l.url, from: linkClass(l), to: linkClass(yl.get(l.url)) })),
-      registerAdded: [...yr.keys()].filter((k) => !xr.has(k)).sort(byString).map((k) => stripRow(yr.get(k))),
-      registerRemoved: [...xr.keys()].filter((k) => !yr.has(k)).sort(byString).map((k) => stripRow(xr.get(k))),
-      registerErrors: fromTo(x.register?.errors, y.register?.errors),
+      rejectedLinks: fromTo(x.rejectedLinks, y.rejectedLinks),
+      sanitized: fromTo(x.sanitized, y.sanitized),
+      registerAdded: [...yr.keys()].filter((k) => !xr.has(k)).sort(byString).map((k) => yr.get(k).claim),
+      registerRemoved: [...xr.keys()].filter((k) => !yr.has(k)).sort(byString).map((k) => xr.get(k).claim),
+      registerChanged: [...xr.keys()].filter((k) => yr.has(k)).sort(byString).map((k) => rowChange(xr.get(k), yr.get(k))).filter(Boolean),
+      registerErrorsAdded: errors.added.map(errorFromKey),
+      registerErrorsRemoved: errors.removed.map(errorFromKey),
     };
-    const any =
-      entry.blobSha || entry.title || entry.banner || entry.headings || entry.next || entry.registerErrors ||
-      entry.linksAdded.length || entry.linksRemoved.length || entry.linksReclassified.length ||
-      entry.registerAdded.length || entry.registerRemoved.length;
+    const any = Object.entries(entry).some(([k, v]) => k !== 'path' && v !== undefined && (!Array.isArray(v) || v.length > 0));
     if (any) changed.push(entry);
   }
   const xs = new Map((a.skipped ?? []).map((s) => [skipKey(s), s]));

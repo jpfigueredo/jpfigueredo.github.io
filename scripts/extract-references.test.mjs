@@ -16,6 +16,7 @@ import {
   MAX_PAGE_BYTES,
   VERSION,
   classifyTarget,
+  decodeTarget,
   diffManifests,
   extract,
   isInvisible,
@@ -171,16 +172,16 @@ describe('classifyTarget: kinds and canonical ids', () => {
     ['https://csrc.nist.gov/pubs/fips/140/3/final', 'fips', 'FIPS 140-3'],
     ['https://csrc.nist.gov/pubs/fips/186-5/final', 'fips', 'FIPS 186-5'],
     ['https://csrc.nist.gov/pubs/sp/800/38/d/final', 'nist', 'SP 800-38D'],
-    ['https://doi.org/10.6028/NIST.SP.800-57pt1r5', 'nist', 'SP 800-57 Part 1', 'Rev. 5'],
-    ['https://csrc.nist.gov/pubs/sp/800/57/pt1/r6/ipd', 'nist', 'SP 800-57 Part 1', 'Rev. 6 ipd'],
-    ['https://csrc.nist.gov/pubs/sp/800/131/a/r3/ipd', 'nist', 'SP 800-131A', 'Rev. 3 ipd'],
-    ['https://doi.org/10.6028/NIST.SP.800-131Ar2', 'nist', 'SP 800-131A', 'Rev. 2'],
-    ['https://csrc.nist.gov/pubs/sp/800/52/r2/final', 'nist', 'SP 800-52', 'Rev. 2'],
-    ['https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-34r1.pdf', 'nist', 'SP 800-34', 'Rev. 1'],
-    ['https://csrc.nist.gov/publications/detail/sp/800-57-part-1/rev-5/final', 'nist', 'SP 800-57 Part 1', 'Rev. 5'],
+    ['https://doi.org/10.6028/NIST.SP.800-57pt1r5', 'nist', 'SP 800-57 Part 1', '5'],
+    ['https://csrc.nist.gov/pubs/sp/800/57/pt1/r6/ipd', 'nist', 'SP 800-57 Part 1', '6', 'ipd'],
+    ['https://csrc.nist.gov/pubs/sp/800/131/a/r3/ipd', 'nist', 'SP 800-131A', '3', 'ipd'],
+    ['https://doi.org/10.6028/NIST.SP.800-131Ar2', 'nist', 'SP 800-131A', '2'],
+    ['https://csrc.nist.gov/pubs/sp/800/52/r2/final', 'nist', 'SP 800-52', '2'],
+    ['https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-34r1.pdf', 'nist', 'SP 800-34', '1'],
+    ['https://csrc.nist.gov/publications/detail/sp/800-57-part-1/rev-5/final', 'nist', 'SP 800-57 Part 1', '5'],
     ['https://csrc.nist.gov/publications/detail/sp/800-38d/final', 'nist', 'SP 800-38D'],
     ['https://csrc.nist.gov/pubs/ir/8547/final', 'nist', 'IR 8547'],
-    ['https://csrc.nist.gov/pubs/ir/8547/ipd', 'nist', 'IR 8547', 'ipd'],
+    ['https://csrc.nist.gov/pubs/ir/8547/ipd', 'nist', 'IR 8547', undefined, 'ipd'],
     ['https://nvlpubs.nist.gov/nistpubs/CSWP/NIST.CSWP.29.pdf', 'nist', 'CSWP 29'],
     ['https://www.nist.gov/pqcrypto', 'nist', undefined],
     ['https://attack.mitre.org/techniques/T1110/001/', 'attack', 'T1110.001'],
@@ -192,25 +193,27 @@ describe('classifyTarget: kinds and canonical ids', () => {
     ['https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-158a', 'cisa', 'AA23-158A'],
     ['https://www.cisa.gov/news-events/directives/bod-22-01', 'cisa', 'BOD 22-01'],
     ['https://www.cisa.gov/known-exploited-vulnerabilities-catalog', 'cisa', undefined],
+    ['https://nvd.nist.gov/vuln/detail/CVE-2024-45678', 'cve', 'CVE-2024-45678'],
     ['https://learn.microsoft.com/en-us/windows/', 'vendor', undefined],
     ['https://docs.github.com/en/actions', 'vendor', undefined],
     ['https://github.com/example/repo', 'other', undefined],
     ['https://doi.org/10.1145/359340.359342', 'other', undefined],
     ['https://example.org/page', 'other', undefined],
   ];
-  for (const [url, kind, id, edition] of cases) {
-    it(`${url} -> ${kind} ${id ?? '(no id)'}${edition ? ` ${edition}` : ''}`, () => {
+  for (const [url, kind, id, revision, stage] of cases) {
+    it(`${url} -> ${kind} ${id ?? '(no id)'}${revision ? ` rev ${revision}` : ''}${stage ? ` ${stage}` : ''}`, () => {
       const c = classifyTarget(url);
       assert.equal(c.type, 'url');
       assert.equal(c.kind, kind);
       assert.equal(c.id, id);
-      assert.equal(c.edition, edition);
+      assert.equal(c.revision, revision);
+      assert.equal(c.stage, stage);
     });
   }
 
   it('covers every kind in the vocabulary', () => {
     const kinds = new Set(cases.map(([, k]) => k));
-    assert.deepEqual([...kinds].sort(), ['attack', 'cisa', 'fips', 'nist', 'other', 'rfc', 'vendor']);
+    assert.deepEqual([...kinds].sort(), ['attack', 'cisa', 'cve', 'fips', 'nist', 'other', 'rfc', 'vendor']);
   });
 
   it('normalizes the URL (host case) but keeps the path', () => {
@@ -313,6 +316,10 @@ describe('statusTags: register vocabulary', () => {
     ['General knowledge', ['general-knowledge']],
     ['Observed', ['observed']],
     ['Verified 2026-10-16', ['verified']],
+    ['Not yet read', ['not-read']],
+    ['Not re-read', ['not-read']],
+    ['Read 2026-10-01; not re-read since', ['not-read', 'read']],
+    ['Not yet run', ['not-run']],
     ['Constructed', []],
   ];
   for (const [status, tags] of cases) {
@@ -370,7 +377,9 @@ describe('parsePage', () => {
       ['Nobody checked this', 'UNVERIFIED', ['unverified']],
       ['A pipe | inside a cell', 'Read; not run', ['not-run', 'read']],
     ]);
-    assert.deepEqual(page.register.rows[0].sourceLinks, [{ url: 'https://csrc.nist.gov/pubs/fips/197/final', kind: 'fips', id: 'FIPS 197', edition: undefined }]);
+    assert.deepEqual(page.register.rows[0].links, [{ column: 'source', url: 'https://csrc.nist.gov/pubs/fips/197/final', kind: 'fips', id: 'FIPS 197', revision: undefined, stage: undefined }]);
+    assert.deepEqual(page.register.columns, ['claim', 'source', 'status']);
+    assert.deepEqual(page.links.find((l) => l.id === 'FIPS 197').columns, ['source']);
     assert.equal(page.register.rows[0].source, 'FIPS 197');
     assert.deepEqual(page.register.errors, []);
   });
@@ -409,9 +418,9 @@ describe('parsePage: malformed Claims register', () => {
     ]);
   });
 
-  it('reports a header without a Status column and reads no rows', () => {
+  it('reports a header without a Status column and keeps the rows, other columns in extra', () => {
     const r = reg('| Claim | Source | Notes |\n|---|---|---|\n| a | b | c |');
-    assert.deepEqual(r.rows, []);
+    assert.deepEqual(r.rows.map((x) => [x.claim, x.source, x.status, x.statusTags, x.extra]), [['a', 'b', null, [], { notes: 'c' }]]);
     assert.deepEqual(r.errors, [{ line: 5, reason: 'missing-column', column: 'status' }]);
   });
 
@@ -423,7 +432,7 @@ describe('parsePage: malformed Claims register', () => {
 
   it('reports a table with no separator row', () => {
     const r = reg('| Claim | Source | Status |\n| a | b | Read |');
-    assert.deepEqual(r.errors, [{ line: 6, reason: 'no-separator' }]);
+    assert.deepEqual(r.errors, [{ line: 5, reason: 'no-separator' }]);
   });
 
   it('reports an empty claim', () => {
@@ -667,15 +676,16 @@ describe('--diff', () => {
     assert.deepEqual(d.pagesRemoved, ['docs/wiki/Beta.md']);
   });
 
-  it('reports blob, banner, links and register changes of a changed page, and nothing for an unchanged one', () => {
+  it('reports blob, banner, links and register rows added/removed; rows that only moved are not changes', () => {
     assert.deepEqual(d.changed.map((c) => c.path), ['docs/wiki/Alpha.md']);
     const c = d.changed[0];
     assert.notEqual(c.blobSha.from, c.blobSha.to);
     assert.deepEqual(c.banner, { from: 'unverified draft. Written only for this test.', to: 'reviewed.' });
     assert.deepEqual(c.linksAdded, [{ url: 'https://www.rfc-editor.org/rfc/rfc8439', kind: 'rfc', id: 'RFC 8439' }]);
     assert.deepEqual(c.linksRemoved, [{ url: 'https://learn.microsoft.com/en-us/windows/', kind: 'vendor' }]);
-    assert.deepEqual(c.registerAdded, [{ claim: 'A new claim', source: 'RFC 8439', status: 'Read' }]);
-    assert.deepEqual(c.registerRemoved, [{ claim: 'A guess about defaults', source: 'General knowledge', status: 'Not read; est.' }]);
+    assert.deepEqual(c.registerAdded, ['A new claim']);
+    assert.deepEqual(c.registerRemoved, ['A guess about defaults']);
+    assert.deepEqual(c.registerChanged, [], 'rows below the removed one moved up a line: not a change');
   });
 
   it('is deterministic and the in-process result matches the CLI', () => {
@@ -1044,33 +1054,232 @@ describe('--diff covers every manifest field', () => {
   alpha.title = 'Changed title';
   alpha.headings.push({ level: 2, text: 'New section' });
   alpha.next = ['docs/wiki/Gamma.md'];
+  alpha.pageLinks = ['docs/wiki/Gamma.md', 'docs/wiki/New.md'];
+  alpha.fileLinks = ['docs/wiki/images/x.png'];
+  alpha.rejectedLinks = [{ reason: 'scheme:javascript', count: 1 }];
+  alpha.sanitized = { htmlComments: 9, invisibleChars: 0 };
   const fips = alpha.links.find((l) => l.id === 'FIPS 197');
   fips.kind = 'nist';
   fips.id = 'SP 800-1';
-  fips.edition = 'Rev. 9';
+  fips.revision = '9';
   alpha.register.errors.push({ line: 1, reason: 'cell-count', expected: 3, got: 2 });
+  // row 1: same source text, other URL; row 2: status changed; every row moved down 5 lines
+  alpha.register.rows[0].links = [{ column: 'source', url: 'https://evil.example/fips-197', kind: 'other' }];
+  alpha.register.rows[1].status = 'Read';
+  alpha.register.rows[1].statusTags = ['read'];
+  for (const row of alpha.register.rows) row.line += 5;
   b.skipped.push({ path: 'docs/wiki/Huge.md', blobSha: 'f'.repeat(40), reason: 'too-large', bytes: 1 });
   const d = diffManifests(a, b);
+  const c = d.changed[0];
 
-  it('reports repo, skipped, title, headings, next, reclassified links and register errors', () => {
+  it('reports repo, skipped, title, headings, next and reclassified links', () => {
     assert.equal(d.repoChanged, true);
     assert.deepEqual(d.skippedAdded.map((s) => s.path), ['docs/wiki/Huge.md']);
     assert.deepEqual(d.skippedRemoved, []);
-    assert.deepEqual(d.changed.map((c) => c.path), ['docs/wiki/Alpha.md']);
-    const c = d.changed[0];
+    assert.deepEqual(d.changed.map((x) => x.path), ['docs/wiki/Alpha.md']);
     assert.deepEqual(c.title, { from: 'Alpha: a synthetic lesson', to: 'Changed title' });
     assert.equal(c.headings.to.length, c.headings.from.length + 1);
     assert.deepEqual(c.next, { from: ['docs/wiki/Beta.md', 'docs/wiki/Gamma.md'], to: ['docs/wiki/Gamma.md'] });
     assert.deepEqual(c.linksReclassified, [
-      { url: 'https://csrc.nist.gov/pubs/fips/197/final', from: { kind: 'fips', id: 'FIPS 197', edition: undefined }, to: { kind: 'nist', id: 'SP 800-1', edition: 'Rev. 9' } },
+      { url: 'https://csrc.nist.gov/pubs/fips/197/final', from: { kind: 'fips', id: 'FIPS 197', revision: undefined, stage: undefined }, to: { kind: 'nist', id: 'SP 800-1', revision: '9', stage: undefined } },
     ]);
-    assert.equal(c.registerErrors.to.length, 1);
     assert.equal(c.blobSha, undefined);
   });
 
-  it('an identical pair has no differences', () => {
+  it('reports page links, file links, rejected links and sanitizer counts', () => {
+    assert.deepEqual([c.pageLinksAdded, c.pageLinksRemoved], [['docs/wiki/New.md'], ['docs/wiki/Beta.md']]);
+    assert.deepEqual([c.fileLinksAdded, c.fileLinksRemoved], [['docs/wiki/images/x.png'], []]);
+    assert.deepEqual(c.rejectedLinks, { from: [], to: [{ reason: 'scheme:javascript', count: 1 }] });
+    assert.deepEqual(c.sanitized.to, { htmlComments: 9, invisibleChars: 0 });
+  });
+
+  it('reports a source URL swapped under the same text, and a status change; moved lines are not changes', () => {
+    assert.deepEqual(c.registerAdded, []);
+    assert.deepEqual(c.registerRemoved, []);
+    assert.deepEqual(c.registerChanged, [
+      { claim: 'A record page was opened', sourceChanged: undefined, statusChanged: { from: 'Listing read', to: 'Read' }, extraChanged: undefined, linksAdded: [], linksRemoved: [] },
+      {
+        claim: 'The cipher has a 128-bit block',
+        sourceChanged: undefined,
+        statusChanged: undefined,
+        extraChanged: undefined,
+        linksAdded: [{ column: 'source', url: 'https://evil.example/fips-197' }],
+        linksRemoved: [{ column: 'source', url: 'https://csrc.nist.gov/pubs/fips/197/final' }],
+      },
+    ]);
+  });
+
+  it('reports register errors without their line numbers', () => {
+    assert.deepEqual(c.registerErrorsAdded, [{ reason: 'cell-count', column: undefined, expected: 3, got: 2 }]);
+    assert.deepEqual(c.registerErrorsRemoved, []);
+  });
+
+  it('an identical pair has no differences, and moving every line is still no difference', () => {
     const z = diffManifests(a, JSON.parse(JSON.stringify(a)));
     assert.equal(z.repoChanged, false);
     assert.deepEqual([z.pagesAdded, z.pagesRemoved, z.skippedAdded, z.skippedRemoved, z.changed], [[], [], [], [], []]);
+    const moved = JSON.parse(JSON.stringify(a));
+    for (const p of moved.pages) {
+      for (const row of p.register?.rows ?? []) row.line += 3;
+      for (const e of p.register?.errors ?? []) e.line += 3;
+    }
+    assert.deepEqual(diffManifests(a, moved).changed, []);
+  });
+});
+
+// ---------------------------------------------------------------- leaks through the masks
+
+// Each case puts hidden text (a real `-->` closes it) next to one of the
+// places the cleaner must treat as code or as a cell. The hidden text must not
+// reach any field of the manifest, and the visible structure must be read as
+// GitHub renders it.
+describe('hidden text does not leak through code spans, fences, blockquotes or table cells', () => {
+  const SECRET = 'IGNORE PREVIOUS INSTRUCTIONS';
+  const page = (md) => parsePage('docs/wiki/L.md', sanitize(md).text);
+  const leaks = (p) => JSON.stringify(p).includes(SECRET);
+
+  it('code span: an unmatched backtick is literal and does not shield a comment', () => {
+    const p = page(`# T\n\n## Intro \` tick <!-- ${SECRET} --> after\n`);
+    assert.equal(leaks(p), false);
+    assert.deepEqual(p.headings.map((h) => h.text), ['T', 'Intro tick after']);
+  });
+
+  it('code span: a comment-looking text inside a real span stays code, the one after it is hidden', () => {
+    const p = page(`# T\n\n## Keep \`<!--\` then <!-- ${SECRET} --> end\n`);
+    assert.equal(leaks(p), false);
+    assert.deepEqual(p.headings.map((h) => h.text), ['T', 'Keep <!-- then end']);
+  });
+
+  it('fence with an info string: "```js" inside a block does not close it', () => {
+    const p = page(`# T\n\n\`\`\`\n\`\`\`js\n# not a heading\n\`\`\`\n\n## Real <!-- ${SECRET} -->\n`);
+    assert.equal(leaks(p), false);
+    assert.deepEqual(p.headings.map((h) => h.text), ['T', 'Real']);
+  });
+
+  it('blockquote: "> <!--" opens an HTML block that runs past the paragraph', () => {
+    const p = page(`# T\n\n> <!-- hidden\n> **Status: ${SECRET}**\n\n-->\n\nText.\n`);
+    assert.equal(leaks(p), false);
+    assert.equal(p.banner, null);
+  });
+
+  it('table cell: cells are split before code spans, so a span cannot cover a comment in another cell', () => {
+    const md = `# T\n\n## Claims register\n\n| Claim | Source | Status |\n|---|---|---|\n| ok \`x | <!-- ${SECRET} --> | \` Read |\n`;
+    const p = page(md);
+    assert.equal(leaks(p), false);
+    assert.deepEqual(p.register.rows.map((r) => [r.claim, r.source, r.status]), [['ok x', '', 'Read']]);
+  });
+
+  it('table cell: a pipe inside a code span splits the cell, as on GitHub', () => {
+    const p = page('# T\n\n## Claims register\n\n| Claim | Source | Status |\n|---|---|---|\n| a `x|y` b | [s](https://www.rfc-editor.org/rfc/rfc8446) | Read |\n');
+    assert.deepEqual(p.register.errors, [{ line: 7, reason: 'cell-count', expected: 3, got: 4 }]);
+    assert.ok(p.links.some((l) => l.id === 'RFC 8446'), 'the links of the malformed row are kept');
+  });
+
+  it('table cell: an escaped pipe does not split, even inside a code span', () => {
+    const p = page('# T\n\n## Claims register\n\n| Claim | Source | Status |\n|---|---|---|\n| a `x\\|y` b | s | Read |\n');
+    assert.deepEqual(p.register.errors, []);
+    assert.equal(p.register.rows[0].claim, 'a x|y b');
+  });
+});
+
+describe('sanitize: passes, fallback and NFC', () => {
+  it('runs as many passes as nested openers need, without breaking literal text elsewhere', () => {
+    assert.equal(sanitize('<!<!<!-- a -->-- b -->-- c --> d, x <? y').text, ' d, x <? y');
+  });
+
+  it('breaks up every `<!` and `<?` when nesting outlasts the passes, and stays a fixed point', () => {
+    let deep = '<!-- z -->';
+    for (let i = 0; i < 20; i += 1) deep = `<!${deep}-- w${i} -->`;
+    const once = sanitize(`${deep} end <? lit`).text;
+    assert.equal(once, '!!!!-- w16 -->-- w17 -->-- w18 -->-- w19 --> end ? lit');
+    assert.equal(sanitize(once).text, once);
+  });
+
+  it('normalizes to NFC, so the same visible text gives the same field', () => {
+    assert.equal(sanitize(`caf${'e'}${cp(0x301)}`).text, `caf${cp(0xe9)}`);
+  });
+});
+
+// ---------------------------------------------------------------- register: nothing disappears
+
+describe('Claims register: links in every column, also in malformed rows', () => {
+  const reg = (body) => parsePage('docs/wiki/R.md', `# R\n\n## Claims register\n\n${body}\n`);
+
+  it('keeps links of extra columns, annotated with the column', () => {
+    const p = reg('| Claim | Source | Status | Notes |\n|---|---|---|---|\n| c | s | Read | see [n](https://example.org/notes) and [p](Other.md) |');
+    assert.deepEqual(p.links.map((l) => [l.url, l.columns]), [['https://example.org/notes', ['notes']]]);
+    assert.deepEqual(p.pageLinks, ['docs/wiki/Other.md']);
+    assert.deepEqual(p.register.rows[0].extra, { notes: 'see n and p' });
+    assert.deepEqual(p.register.rows[0].links.map((l) => [l.column, l.url]), [['notes', 'https://example.org/notes']]);
+  });
+
+  it('a row with the wrong cell count is an error but its links stay', () => {
+    const p = reg('| Claim | Source | Status |\n|---|---|---|\n| c | [a](https://example.org/a) |');
+    assert.deepEqual(p.register.errors, [{ line: 7, reason: 'cell-count', expected: 3, got: 2 }]);
+    assert.deepEqual(p.links.map((l) => [l.url, l.columns]), [['https://example.org/a', ['source']]]);
+  });
+
+  it('"Where read" instead of Source: rows kept, source null, the column in extra with its links', () => {
+    const p = reg('| Claim | Where read | Status |\n|---|---|---|\n| c | [w](https://example.org/w) | Read |');
+    assert.deepEqual(p.register.errors, [{ line: 5, reason: 'missing-column', column: 'source' }]);
+    const row = p.register.rows[0];
+    assert.deepEqual([row.source, row.status, row.extra], [null, 'Read', { 'where read': 'w' }]);
+    assert.deepEqual(p.links[0].columns, ['where read']);
+  });
+
+  it('no Claim column: no rows, an error, and the links are still kept', () => {
+    const p = reg('| Item | Source | Status |\n|---|---|---|\n| c | [a](https://example.org/a) | Read |');
+    assert.deepEqual(p.register.rows, []);
+    assert.deepEqual(p.register.errors, [{ line: 5, reason: 'missing-column', column: 'claim' }]);
+    assert.equal(p.links.length, 1);
+  });
+});
+
+// ---------------------------------------------------------------- smaller cases
+
+describe('smaller cases', () => {
+  it('decodes escapes and entities in one pass', () => {
+    assert.equal(decodeTarget('\\&#58;x'), '&#58;x');
+    assert.equal(decodeTarget('&amp;#58;'), '&#58;');
+    assert.equal(decodeTarget('javascript\\:x'), 'javascript:x');
+  });
+
+  it('plainText keeps code span content as written', () => {
+    assert.equal(plainText('no `<forward>` element, `Mon *-*-* 00:00:00`, **bold** <b>tag</b>'), 'no <forward> element, Mon *-*-* 00:00:00, bold tag');
+  });
+
+  it('pages.nist.gov SP 800-63-4 volumes and CVE records get ids', () => {
+    assert.equal(classifyTarget('https://pages.nist.gov/800-63-4/sp800-63b.html').id, 'SP 800-63B-4');
+    assert.deepEqual(
+      [classifyTarget('https://nvd.nist.gov/vuln/detail/CVE-2024-45678').kind, classifyTarget('https://nvd.nist.gov/vuln/detail/CVE-2024-45678').id],
+      ['cve', 'CVE-2024-45678'],
+    );
+    assert.equal(classifyTarget('https://www.cve.org/CVERecord?id=CVE-2021-44228').id, 'CVE-2021-44228');
+  });
+
+  it('front matter is not read, and non-page files go to fileLinks, not pageLinks', () => {
+    const p = parsePage('docs/wiki/F.md', '---\nlink: https://evil.example/fm\ntitle: x\n---\n# F\n\n[img](images/x.png) [page](Target.md#sec)\n');
+    assert.deepEqual(p.links, []);
+    assert.equal(p.title, 'F');
+    assert.deepEqual(p.pageLinks, ['docs/wiki/Target.md']);
+    assert.deepEqual(p.fileLinks, ['docs/wiki/images/x.png']);
+  });
+
+  it('a HEAD that is a symlink is refused without echoing its content (exit 2)', () => {
+    const repo = fixtureRepo({ 'docs/wiki/A.md': '# A\n' });
+    const secret = join(tempDir(), 'secret');
+    writeFileSync(secret, 'TOP-SECRET-CONTENT\n');
+    rmSync(join(repo.dir, '.git', 'HEAD'));
+    symlinkSync(secret, join(repo.dir, '.git', 'HEAD'));
+    assert.throws(
+      () => extract({ pinText: pinFor(repo), repoDir: repo.dir }),
+      (e) => e.exitCode === 2 && /not a regular file/.test(e.message) && !e.message.includes('TOP-SECRET'),
+    );
+  });
+
+  it('a HEAD that is too large is refused without echoing its content', () => {
+    const repo = fixtureRepo({ 'docs/wiki/A.md': '# A\n' });
+    writeFileSync(join(repo.dir, '.git', 'HEAD'), `ref: refs/heads/${'x'.repeat(5000)}`);
+    assert.throws(() => extract({ pinText: pinFor(repo), repoDir: repo.dir }), (e) => e.exitCode === 2 && /larger than/.test(e.message) && !e.message.includes('xxxx'));
   });
 });
