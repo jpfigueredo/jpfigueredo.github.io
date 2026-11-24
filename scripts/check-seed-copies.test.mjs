@@ -129,6 +129,15 @@ describe('findCopies over the git index', () => {
     assert.deepEqual(copiesIn(dir), [['web/src/data/notes.json', 'shape']]);
   });
 
+  it('keeps a TAB inside a file name as part of the path', () => {
+    assert.deepEqual(copiesIn(repo({ ...BASE, 'web/src/data/a\tb.json': SEED })), [['web/src/data/a\tb.json', 'shape']]);
+  });
+
+  it('scans .JSON and .Json too (case-insensitive extension)', () => {
+    const dir = repo({ ...BASE, 'web/src/data/TRILHA.JSON': SEED, 'apps/ohara/Seed.Copy.Json': SEED, 'web/src/data/notes.jsonc': SEED });
+    assert.deepEqual(copiesIn(dir), [['apps/ohara/Seed.Copy.Json', 'name+shape'], ['web/src/data/TRILHA.JSON', 'shape']]);
+  });
+
   it('handles paths with spaces and non-ASCII names', () => {
     assert.deepEqual(copiesIn(repo({ ...BASE, 'web/src/dados/trilha ção.json': SEED })), [['web/src/dados/trilha ção.json', 'shape']]);
   });

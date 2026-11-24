@@ -4,8 +4,8 @@
 // (@jpfig/ohara-data). A second copy gets read by someone and drifts in
 // silence: import from @jpfig/ohara-data instead of copying the file.
 //
-// What it scans: every *.json in the git index (`git ls-files -s '*.json'`),
-// read from the index blobs, so only versioned content counts. Untracked
+// What it scans: every *.json in the git index, any case (.JSON too:
+// `git ls-files -s ':(icase)*.json'`), read from the index blobs, so only versioned content counts. Untracked
 // files, node_modules and build output never enter. It runs as a plain
 // script in CI, not as a turbo task, so no task cache can skip it.
 //
@@ -54,14 +54,16 @@ function git(repoRoot, args, input) {
 
 // Versioned *.json files with their content from the index: [{ path, content }].
 export function versionedJson(repoRoot) {
-  const entries = git(repoRoot, ['ls-files', '-s', '-z', '--', '*.json'])
+  const entries = git(repoRoot, ['ls-files', '-s', '-z', '--', ':(icase)*.json'])
     .toString('utf8')
     .split('\0')
     .filter(Boolean)
     .map((line) => {
-      const [meta, file] = line.split('\t');
-      const [mode, sha] = meta.split(' ');
-      return { mode, sha, path: file };
+      // "<mode> <sha> <stage>\t<path>": the path runs to the end of the record
+      // and may itself contain a TAB.
+      const tab = line.indexOf('\t');
+      const [mode, sha] = line.slice(0, tab).split(' ');
+      return { mode, sha, path: line.slice(tab + 1) };
     })
     // Regular files only: skip symlinks (120000) and submodules (160000).
     .filter((e) => e.mode === '100644' || e.mode === '100755');
