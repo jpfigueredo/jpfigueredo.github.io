@@ -5,13 +5,14 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { GateError } from './lib/lockfile-grammar.mjs';
-import { EXCEPTIONS_PATH, MAX_EXCEPTION_DAYS, MIN_AGE_MS, USER_AGENT, parseExceptions, run } from './lock-entry-ages.mjs';
+import { EXCEPTIONS_PATH, MAX_EXCEPTION_DAYS, MIN_AGE_MS, USER_AGENT, invokedAsCli, parseExceptions, run } from './lock-entry-ages.mjs';
+import { GATE_IMPORTS, LIB_IMPORTS, gateSourceProblems } from './gate-source.testlib.mjs';
 
 const SCRIPTS = dirname(fileURLToPath(import.meta.url));
 
@@ -402,6 +403,23 @@ describe('exceptions (security/lock-age-allowlist.json)', () => {
     assert.deepEqual(out.errors, []);
     assert.equal(out.exitCode, 1);
   });
+
+  // The file in the base is what makes CI run the base's copy of this gate.
+  it('deleting the file fails the gate (exit 1), even with nothing new to check', async () => {
+    for (const baseEntries of [[], [exception()]]) {
+      const out = await gate({ base: snapshot({ exceptions: baseEntries }), head: snapshot() }, registry());
+      assert.equal(out.exitCode, 1);
+      assert.deepEqual(out.rows, []);
+      assert.equal(out.errors.length, 1);
+      assert.match(out.errors[0], /^security\/lock-age-allowlist\.json is in the base but not in the head: this change deletes it\. .*Restore the file/);
+    }
+  });
+
+  it('a file the base does not have either is not a deletion', async () => {
+    const out = await gate({ base: snapshot(), head: snapshot() }, registry());
+    assert.equal(out.exitCode, 0);
+    assert.deepEqual(out.errors, []);
+  });
 });
 
 // ---------------------------------------------------------------- git
@@ -499,12 +517,85 @@ describe('CLI (child process)', () => {
       const res = spawnSync(process.execPath, [join(SCRIPTS, 'lock-entry-ages.mjs'), '--base', 'base', '--head', 'HEAD'], { cwd: dir, encoding: 'utf8', env: { ...process.env, GITHUB_STEP_SUMMARY: '' } });
       assert.equal(res.status, 0, res.stdout + res.stderr);
       assert.match(res.stdout, /^yarn\.lock: 0 new name@version entries$/m);
-      assert.match(res.stdout, /^Result: PASS$/m);
       assert.doesNotMatch(res.stdout + res.stderr, /OSV|Advisories|advisory gate/i);
-      assert.equal(res.stdout.match(/^Result:/gm).length, 1);
+      assert.deepEqual(res.stdout.match(/^Result:.*$/gm), ['Result: PASS']);
+      assert.match(res.stdout, /\nResult: PASS\n$/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it('deleting security/lock-age-allowlist.json prints the error and "Result: FAIL (policy, exit 1)"', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lock-age-marker-'));
+    try {
+      git(dir, 'init', '-q');
+      mkdirSync(join(dir, 'services/rust-api'), { recursive: true });
+      mkdirSync(join(dir, 'security'));
+      writeFileSync(join(dir, 'yarn.lock'), yarnLock(LODASH_20));
+      writeFileSync(join(dir, 'services/rust-api/Cargo.lock'), cargoLock(['serde', '1.0.0']));
+      writeFileSync(join(dir, EXCEPTIONS_PATH), JSON.stringify({ version: 1, entries: [] }));
+      git(dir, 'add', '-A');
+      git(dir, 'commit', '-q', '-m', 'base');
+      git(dir, 'tag', 'base');
+      git(dir, 'rm', '-q', EXCEPTIONS_PATH);
+      git(dir, 'commit', '-q', '-m', 'head');
+      const res = spawnSync(process.execPath, [join(SCRIPTS, 'lock-entry-ages.mjs'), '--base', 'base', '--head', 'HEAD'], { cwd: dir, encoding: 'utf8', env: { ...process.env, GITHUB_STEP_SUMMARY: '' } });
+      assert.equal(res.status, 1, res.stdout + res.stderr);
+      assert.match(res.stdout, /^::error title=lock age exceptions::security\/lock-age-allowlist\.json is in the base but not in the head/m);
+      assert.deepEqual(res.stdout.match(/^Result:.*$/gm), ['Result: FAIL (policy, exit 1)']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('invokedAsCli: true only when argv[1] is this file (also through a symlink)', () => {
+    const gatePath = join(SCRIPTS, 'lock-entry-ages.mjs');
+    const url = pathToFileURL(gatePath).href;
+    const dir = mkdtempSync(join(tmpdir(), 'lock-age-guard-'));
+    try {
+      const link = join(dir, 'gate.mjs');
+      symlinkSync(gatePath, link);
+      const other = join(dir, 'other.mjs');
+      writeFileSync(other, '');
+      assert.equal(invokedAsCli(url, gatePath), true);
+      assert.equal(invokedAsCli(url, link), true);
+      assert.equal(invokedAsCli(url, other), false);
+      assert.equal(invokedAsCli(url, join(SCRIPTS, 'advisory-gate.mjs')), false);
+      assert.equal(invokedAsCli(url, join(dir, 'missing.mjs')), false);
+      assert.equal(invokedAsCli(url, ''), false);
+      // No script path (node -e, or the source on stdin): argv[1] is unset,
+      // nothing runs and the exit is 0, hence the "Result: PASS" rule in CI.
+      const noPath = spawnSync(process.execPath, ['--input-type=module', '-e', `const m = await import(${JSON.stringify(url)}); console.log(m.invokedAsCli(${JSON.stringify(url)}));`], { encoding: 'utf8' });
+      assert.equal(noPath.status, 0, noPath.stderr);
+      assert.equal(noPath.stdout, 'false\n');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('gate sources: no import.meta other than .url; imports only node: and ./lib/ (lib: node: and its siblings)', () => {
+    assert.deepEqual(gateSourceProblems(readFileSync(join(SCRIPTS, 'lock-entry-ages.mjs'), 'utf8'), GATE_IMPORTS), []);
+    const libs = readdirSync(join(SCRIPTS, 'lib')).filter((f) => f.endsWith('.mjs'));
+    assert.ok(libs.length >= 2, libs.join());
+    for (const f of libs) {
+      assert.deepEqual(gateSourceProblems(readFileSync(join(SCRIPTS, 'lib', f), 'utf8'), LIB_IMPORTS, { cli: false }), [], f);
+    }
+  });
+
+  it('the static check flags bad imports and guards, not strings that look like imports', () => {
+    const guard = "if (invokedAsCli(import.meta.url)) {\n  main();\n}\n";
+    const ok = "import { a } from './lib/gate-report.mjs';\nexport function f() { return `copied from 'develop'`; }\nconst g = { base: 'origin/develop' }; // from 'develop'\n" + guard;
+    assert.deepEqual(gateSourceProblems(ok, GATE_IMPORTS), []);
+    for (const [bad, re] of [
+      ["import { parseCargoLock } from './advisory-gate.mjs';\n", /imports \.\/advisory-gate\.mjs/],
+      ["export * from '../evil.mjs';\n", /imports \.\.\/evil\.mjs/],
+      ["import {\n  a,\n} from 'fs';\n", /imports fs/],
+      ["await import('./advisory-gate.mjs');\n", /dynamic import/],
+      ["if (import.meta.main !== false) main();\n", /import\.meta/],
+    ]) {
+      assert.ok(gateSourceProblems(bad + guard, GATE_IMPORTS).some((p) => re.test(p)), bad);
+    }
+    assert.ok(gateSourceProblems("if (import.meta.main) {\n  main();\n}\n", GATE_IMPORTS).some((p) => /expected one "if \(invokedAsCli/.test(p)));
   });
 
   it('importing either gate runs no CLI; running either by path does', () => {

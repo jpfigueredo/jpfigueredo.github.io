@@ -8,7 +8,7 @@
   "nav": {
     "home": "Início",
     "goom64": "GOOM64",
-    "swTimeline": "Ohara",
+    "ohara": "Ohara",
     "kafkaViz": "Kafka Viz"
   },
   "home": {
@@ -17,14 +17,14 @@
       "title": "GOOM64",
       "description": "Um remake do clássico DOOM64 desenvolvido em Go e compilado para WebAssembly. Demonstra habilidades em programação de sistemas, otimização de performance e desenvolvimento de jogos."
     },
-    "swTimeline": {
+    "ohara": {
       "title": "Ohara",
-      "description": "Trilhas de leitura sobre fontes primárias: um DAG da genealogia das ideias, do fundamental ao moderno — com prévia, referências e caminho de estudo.",
-      "blurb": "Nasceu de uma pergunta simples: de onde vem, de fato, cada ideia da computação? Ohara mapeia a genealogia das ideias como um grafo acíclico dirigido de fontes primárias — de Turing (1936) aos sistemas distribuídos modernos — transformando papers dispersos em trilhas de estudo guiadas.",
+      "blurb": "Nasceu de uma pergunta simples: de onde vem, de fato, cada ideia da computação? Ohara organiza obras de referência por linhagem de ideias, num grafo curado de leituras — de Turing (1936) aos sistemas distribuídos modernos — e transforma leituras dispersas em trilhas de estudo guiadas.",
       "highlights": [
-        "Ordenação topológica com detecção de ciclos sobre o grafo de citações",
-        "Só fontes primárias verificadas — com proveniência rotulada, proibido inventar",
-        "Acessível e responsivo: nós navegáveis por teclado, respeita reduced-motion",
+        "Ordenação topológica de um grafo curado de leituras de referência",
+        "Cada ligação tem procedência rotulada; hoje todas vêm de curadoria",
+        "Links para versões abertas hospedadas por autores e instituições, quando existem",
+        "Nós navegáveis por teclado",
         "Desacoplado por design: external-configuration pattern, testado com Vitest"
       ]
     },
@@ -66,20 +66,9 @@
     "subtitle": "(Go + WASM)",
     "description": "Um remake do clássico DOOM64 desenvolvido em Go e compilado para WebAssembly. Demonstra habilidades em programação de sistemas e otimização de performance."
   },
-  "swTimeline": {
+  "ohara": {
     "title": "Ohara",
-    "description": "Linha do tempo interativa da Engenharia de Software.",
-    "underConstruction": {
-      "badge": "Em construção",
-      "message": "Esta visualização está passando por um refactor profundo de UI/UX e engine gráfica. Em breve volta ao ar com performance, visual e interações no nível que eu espero.",
-      "submessage": "Enquanto isso, navegue pelos outros projetos no menu lateral."
-    },
-    "techStack": {
-      "title": "Tech stack",
-      "line1": "Three.js (WebGL) · TypeScript · Vite",
-      "line2": "React (overlay de UI) · Tailwind CSS",
-      "line3": "Deploy estático com"
-    }
+    "description": "Trilhas de leitura de obras de referência, organizadas por linhagem de ideias."
   },
   "kafkaViz": {
     "title": "Kafka Viz",

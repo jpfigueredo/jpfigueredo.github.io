@@ -36,7 +36,6 @@ Scopes map to packages/apps in the monorepo:
 | Scope | Path |
 |---|---|
 | `web` | `web/` |
-| `sw-timeline` | `apps/sw-timeline/` |
 | `kafka-viz` | `apps/kafka-viz/` |
 | `angular-demo` | `archive/angular-demo/` (offline, not a workspace) |
 | `doom64` | `apps/doom64-wasm/` |
@@ -53,13 +52,13 @@ Omit scope only for cross-cutting changes that don't fit a single package.
 ### Examples
 
 ```
-feat(sw-timeline): add macintosh-1984 and java-1995 events with materialist analysis
+feat(kafka-viz): add a multi-broker scenario with partition replicas
 
 fix(kafka-viz): rename unused broker param to _broker to satisfy strict TS
 
 refactor(web): split Button styles into typed constants to fix TS2559
 
-style(sw-timeline): convert kafka.scss to plain CSS, remove sass dependency
+style(ui): reorder Button class names, no behavior change
 
 ci: add BFF and Rust API deploy hooks for Render.com
 
@@ -218,6 +217,20 @@ needs no token and installs nothing.
 - **Weekly** (`.github/workflows/advisories.yml`, absolute mode on
   `develop`): fails on every advisory the allowlist does not accept, so the
   existing ones stay visible until they are fixed.
+- **Bootstrap (`release`/`main`):** while the base branch has no
+  `scripts/advisory-gate.mjs`, CI fetches `develop` and requires the PR's
+  gate files (`scripts/advisory-gate.mjs`, `scripts/lib/*.mjs` that CI copies)
+  to be develop's, same mode and blob; then develop's copy runs. Any
+  difference, a missing file included, or a failed fetch is exit 2. Until
+  `release`/`main` receive the gate through a promotion, PRs to them pass
+  only when their gate files are byte-identical to develop's (a hotfix
+  branched from `main` does not have them and fails): promote `develop`
+  first.
+- **How CI runs both gates:** with a clean environment (`env -i` with only
+  `PATH`, `HOME` and `GITHUB_STEP_SUMMARY`, so `NODE_OPTIONS`, TLS, CA and
+  proxy variables of the job never reach them), and exit 0 counts as a pass
+  only if the output has exactly one line `Result: PASS`. An exit 0 without
+  it (e.g. a CLI guard that did not start the gate) is exit 2.
 - Both fail if an allowlist entry is invalid, expired, or further away than
   its severity allows (exit 1), and fail closed (exit 2, nothing checked) if
   OSV cannot be queried or a lockfile does not validate. The lockfiles are
@@ -292,8 +305,8 @@ only Dependabot's). It compares the PR's `yarn.lock` and
 passes. Removed versions do not count, and neither does a change of only
 `resolved`, `integrity` or `checksum` for the same `name@version`.
 
-- Exit 1: a version too young and not accepted, or an exception that is
-  invalid or expired.
+- Exit 1: a version too young and not accepted, an exception that is
+  invalid or expired, or `security/lock-age-allowlist.json` deleted.
 - Exit 2, not checked: a registry lookup failed (network, HTTP error, version
   missing or unpublished), or a lockfile entry is outside the closed grammar
   of the advisory gate. Git, tarball, `file:` and other-registry sources fail
@@ -305,10 +318,19 @@ passes. Removed versions do not count, and neither does a change of only
 - Like the advisory gate, CI runs the base branch's copy of the script and
   of the `scripts/lib/` modules it imports, so a PR that edits them is
   judged by the old version. The base copy is used once the base has
-  `security/lock-age-allowlist.json`; before that (the PR that added the
-  gate, promotions until it reaches `release`/`main`) the PR's copy runs,
-  with a warning. Reviewers run develop's copy the same way (commands in
+  `security/lock-age-allowlist.json`. Before that (PRs to `release`/`main`
+  until they receive the gate through a promotion), CI fetches `develop` and
+  requires the PR's `scripts/lock-entry-ages.mjs`,
+  `scripts/lib/lockfile-grammar.mjs` and `scripts/lib/gate-report.mjs` to be
+  develop's, same mode and blob; then develop's copy runs, with a warning.
+  Any difference, a missing file included, or a failed fetch is exit 2:
+  until then, PRs to `release`/`main` pass only when their gate files are
+  byte-identical to develop's; promote `develop` first. Reviewers run
+  develop's copy the same way (commands in
   "Dependency updates (Dependabot)").
+- Same clean environment and positive proof as the advisory gate: `env -i`
+  with only `PATH`, `HOME` and `GITHUB_STEP_SUMMARY`; exit 0 counts only
+  with exactly one `Result: PASS` line.
 
 The usual fix is to wait, or to keep the previous version (in `yarn.lock`,
 pin the range to the older entry; in Cargo, `cargo update -p <crate>
@@ -335,7 +357,8 @@ warning, and `security/` changes need the owner's review:
   (the real one, not an alias) and `version` one exact SemVer version: no
   ranges, `*` or dist-tags. One entry per version.
 - Do not delete the file, even when it is empty: its presence in the base
-  branch is what makes CI run the base's copy of the gate.
+  branch is what makes CI run the base's copy of the gate. A PR that deletes
+  it fails the gate (exit 1).
 - `ghsa`: the advisory the young version is needed for.
 - `reviewBy`: at most 30 days ahead. The day after, the entry fails every PR
   until it is removed (by then the version is old enough).

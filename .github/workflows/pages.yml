@@ -105,7 +105,7 @@ jobs:
         # an app added, removed or left without a build is caught here. To
         # add or remove an app, change its workspace and this list together.
         env:
-          PAGES_APPS: kafka-viz ohara/front sw-timeline
+          PAGES_APPS: kafka-viz ohara/front
         run: |
           fail=0
           for page in index.html 404.html; do
