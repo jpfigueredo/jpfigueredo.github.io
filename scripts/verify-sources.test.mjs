@@ -19,7 +19,6 @@ import {
   classify,
   invokedAsCli,
   isBlockedAddress,
-  legacyTargets,
   loadDatasets,
   mapLimit,
   oharaTargets,
@@ -119,6 +118,9 @@ describe('classify', () => {
     ['https://www.dropbox.com/s/paper.pdf', 'unclassified'], // x.com only as a domain
     ['https://summit.edu/paper.pdf', 'unclassified'], // mit.edu only as a domain
     ['https://example.org/compressed/paper.pdf', 'unclassified'], // "press" only as a path segment
+    ['https://X.COM./someone', 'avoid'], // upper case and trailing dot
+    ['https://YOUTUBE.com./watch?v=1', 'avoid'],
+    ['https://DOI.ORG./10.1/x', 'primary'],
     ['not a url', 'avoid'],
   ]) {
     it(`${url} -> ${klass}`, () => assert.equal(classify(url).klass, klass));
@@ -134,10 +136,13 @@ describe('isBlockedAddress', () => {
     '::1', '::', 'fe80::1', 'fc00::1', 'fd12:3456::1', 'ff02::1',
     '::ffff:127.0.0.1', '::ffff:7f00:1', '::ffff:a9fe:a9fe', '::ffff:10.0.0.1',
     '64:ff9b::7f00:1', '2002:7f00:1::', 'not-an-ip', '',
+    '::7f00:1', '::127.0.0.1', '::a9fe:a9fe', '::10.0.0.1', '::8.8.8.8', // IPv4-compatible (::/96)
+    '::ffff:0:7f00:1', '::ffff:0:127.0.0.1', '::ffff:0:808:808', // IPv4-translated (::ffff:0:0:0/96)
+    '2001:0:4136:e378:8000:63bf:3fff:fdd2', '2001::1', // Teredo (2001::/32)
   ]) {
     it(`blocks ${a || '(empty)'}`, () => assert.equal(isBlockedAddress(a), true));
   }
-  for (const a of ['8.8.8.8', '1.1.1.1', '172.32.0.1', '100.128.0.1', '2606:4700:4700::1111', '::ffff:8.8.8.8']) {
+  for (const a of ['8.8.8.8', '1.1.1.1', '172.32.0.1', '100.128.0.1', '2606:4700:4700::1111', '::ffff:8.8.8.8', '2001:4860:4860::8888', '2001:1::1']) {
     it(`allows ${a}`, () => assert.equal(isBlockedAddress(a), false));
   }
 });
@@ -153,7 +158,13 @@ describe('screenUrl (SSRF and scheme screen)', () => {
     ['https://2130706433/', /non-public address 127\.0\.0\.1/], // decimal form of 127.0.0.1
     ['https://0x7f.1/', /non-public address 127\.0\.0\.1/], // hex shorthand
     ['https://169.254.169.254/latest/meta-data/', /non-public address 169\.254/],
-    ['https://10.0.0.8:8443/admin', /non-public address 10\./],
+    ['https://10.0.0.8/admin', /non-public address 10\./],
+    ['https://[::127.0.0.1]/', /non-public address ::7f00:1/], // IPv4-compatible
+    ['https://[::ffff:0:127.0.0.1]/', /non-public address ::ffff:0:7f00:1/], // IPv4-translated
+    ['https://[2001:0:4136:e378:8000:63bf:3fff:fdd2]/', /non-public address 2001:0:/], // Teredo
+    ['https://example.org:8443/', /port 8443 \(default https port only\)/],
+    ['https://example.org:80/', /port 80 /],
+    ['https://8.8.8.8:22/', /port 22 /],
     ['https://[::1]/', /non-public address ::1/],
     ['https://[::ffff:127.0.0.1]/', /non-public address/],
     ['https://[fd00::1]/', /non-public address/],
@@ -190,8 +201,9 @@ describe('screenUrl (SSRF and scheme screen)', () => {
     assert.match(await screenUrl('https://empty.example.org/', resolver({ 'empty.example.org': [] })), /no address/);
   });
 
-  it('lets a public https URL through (trailing dot and public IP literal too)', async () => {
+  it('lets a public https URL through (trailing dot, explicit :443 and public IP literal too)', async () => {
     assert.equal(await screenUrl('https://example.org/paper.pdf', resolver()), null);
+    assert.equal(await screenUrl('https://example.org:443/paper.pdf', resolver()), null);
     assert.equal(await screenUrl('https://example.org./paper.pdf', resolver()), null);
     assert.equal(await screenUrl('https://8.8.8.8/', resolver()), null);
   });
@@ -233,6 +245,13 @@ describe('checkUrl', () => {
     const fetchImpl = fakeFetch({ [U]: [301, { location: 'https://evil.example.net/' }] });
     const r = await checkUrl(U, { fetchImpl, resolveHost: resolver({ 'evil.example.net': ['127.0.0.1'] }), sleep: noSleep() });
     assert.match(r.refused, /127\.0\.0\.1/);
+    assert.deepEqual(fetchImpl.calls.map((c) => c.url), [U]);
+  });
+
+  it('refuses a redirect to a non-default port', async () => {
+    const fetchImpl = fakeFetch({ [U]: [302, { location: 'https://example.org:6443/' }] });
+    const r = await checkUrl(U, { fetchImpl, resolveHost: resolver(), sleep: noSleep() });
+    assert.match(r.refused, /port 6443/);
     assert.deepEqual(fetchImpl.calls.map((c) => c.url), [U]);
   });
 
@@ -380,39 +399,33 @@ describe('oharaTargets (schema format: sources[] objects)', () => {
   });
 });
 
-describe('legacyTargets (sources[] strings + link rules)', () => {
-  it('checks string sources and suggests a missing canonical link', () => {
-    const rules = new Map([['n1', { id: 'n1', preferred: ['https://doi.org/1'], notes: 'use DOI' }], ['n2', { id: 'n2', preferred: ['https://doi.org/2'] }]]);
-    const { targets, suggestions } = legacyTargets({ nodes: [
-      { id: 'n1', label: 'N1', sources: ['https://example.org/n1', 42] },
-      { id: 'n2', label: 'N2', sources: ['https://doi.org/2'] },
-    ] }, rules);
-    assert.deepEqual(targets.map((t) => t.url), ['https://example.org/n1', 'https://doi.org/2']);
-    assert.deepEqual(suggestions, [{ id: 'n1', label: 'N1', preferred: ['https://doi.org/1'], notes: 'use DOI' }]);
-  });
-});
-
 describe('loadDatasets', () => {
   it('reads the Ohara seed from packages/ohara-data in the real repository', async () => {
     const ds = await loadDatasets(REPO);
-    const ohara = ds.filter((d) => d.kind === 'ohara').map((d) => d.file);
-    assert.ok(ohara.includes('packages/ohara-data/seed.distributed-systems.json'), ohara.join(','));
-    assert.ok(ds.find((d) => d.kind === 'ohara').targets.length > 0);
+    const files = ds.map((d) => d.file);
+    assert.ok(files.includes('packages/ohara-data/seed.distributed-systems.json'), files.join(','));
+    assert.ok(ds.every((d) => d.targets.length > 0));
   });
 
-  it('reads Ohara seeds and legacy seeds, ignoring other files in the package', async () => {
+  it('reads only the Ohara seeds: not other files in the package, not web/src/data', async () => {
     const dir = tempRepo({
       'packages/ohara-data/seed.alpha.json': oharaSeed([{ id: 'a', label: 'A', sources: [{ sourceType: 'free', url: 'https://a.example.org/' }] }]),
+      'packages/ohara-data/seed.beta.json': oharaSeed([{ id: 'b', label: 'B', sources: [{ sourceType: 'free', url: 'https://b.example.org/' }] }]),
       'packages/ohara-data/schema.json': { $id: 'x' },
       'packages/ohara-data/seed.json': '{', // not seed.<name>.json: ignored
       'web/src/data/old/seed.json': { nodes: [{ id: 'o', label: 'O', sources: ['https://o.example.org/'] }] },
-      'web/src/data/old/link-rules.json': { rules: [{ id: 'o', preferred: ['https://doi.org/o'] }] },
     });
     const ds = await loadDatasets(dir);
-    assert.deepEqual(ds.map((d) => [d.file, d.kind, d.targets.length, d.suggestions.length]), [
-      ['packages/ohara-data/seed.alpha.json', 'ohara', 1, 0],
-      ['web/src/data/old/seed.json', 'legacy', 1, 1],
+    assert.deepEqual(ds.map((d) => [d.file, d.targets.length]), [
+      ['packages/ohara-data/seed.alpha.json', 1],
+      ['packages/ohara-data/seed.beta.json', 1],
     ]);
+  });
+
+  it('the real repository yields only Ohara seeds', async () => {
+    const ds = await loadDatasets(REPO);
+    assert.ok(ds.length > 0);
+    for (const d of ds) assert.match(d.file, /^packages\/ohara-data\/seed\.[a-z0-9-]+\.json$/);
   });
 
   it('fails without an Ohara seed, or with an unreadable one', async () => {
@@ -427,7 +440,7 @@ describe('loadDatasets', () => {
 describe('renderReport', () => {
   it('lists free sources by node with HTTP status, class and result, and escapes Markdown', () => {
     const md = renderReport([{
-      file: 'packages/ohara-data/seed.t.json', kind: 'ohara', notChecked: 2, suggestions: [],
+      file: 'packages/ohara-data/seed.t.json', notChecked: 2,
       results: [
         { id: 'a', label: 'Paper | A', url: 'https://doi.org/1', ok: true, status: 200, redirects: 0, klass: 'primary' },
         { id: 'b', label: 'B', url: 'https://b.example.org/', ok: false, status: 404, klass: 'unclassified' },
@@ -450,6 +463,7 @@ describe('renderReport', () => {
     );
     assert.equal(resultText({ ok: false, status: 404, redirects: 1, finalUrl: 'https://example.org/y' }), 'BROKEN (after 1 redirect(s), at https://example.org/y)');
     assert.equal(resultText({ ok: true, redirects: 0 }), 'ok');
+    assert.equal(resultText({ ok: true, redirects: 1, finalUrl: 'https://dl.acm.org/x' }), 'ok (after 1 redirect(s), at https://dl.acm.org/x)');
   });
 });
 
@@ -477,9 +491,9 @@ describe('run', () => {
     assert.equal(code, 0, lines.err.join('\n'));
     const report = readFileSync(join(dir, 'reports/links.md'), 'utf8');
     assert.match(report, /## packages\/ohara-data\/seed\.t\.json/);
-    assert.match(report, /## web\/src\/data\/old\/seed\.json/);
+    assert.doesNotMatch(report, /web\/src\/data|o\.example\.org/); // the old dataset is not read
     assert.match(report, /\| A \| https:\/\/doi\.org\/10\.1\/a \| 200 \| primary \| ok \|/);
-    assert.match(lines.out.join('\n'), /checked 3 URL\(s\) in 2 seed\(s\): 0 failed/);
+    assert.match(lines.out.join('\n'), /checked 2 URL\(s\) in 1 seed\(s\): 0 failed/);
   });
 
   it('a broken source: --ci exits 1 with ::error, --warn exits 0 with ::warning, no flag exits 0', async () => {
@@ -493,8 +507,22 @@ describe('run', () => {
     }
   });
 
+  it('classifies by the final URL: a doi.org redirect to a blog is not primary', async () => {
+    const dir = tempRepo(seedFiles());
+    const fetchImpl = fakeFetch({
+      'https://doi.org/10.1/a': [302, { location: 'https://medium.com/@someone/a' }],
+      'https://medium.com/@someone/a': 200,
+      'https://b.example.org/b.pdf': [301, { location: 'https://arxiv.org/abs/1' }],
+      'https://arxiv.org/abs/1': 200,
+    });
+    assert.equal(await run([], { repoRoot: dir, fetchImpl, resolveHost: resolver(), sleep: noSleep(), log: () => {}, err: () => {}, now: NOW }), 0);
+    const report = readFileSync(join(dir, 'reports/links.md'), 'utf8');
+    assert.match(report, /\| A \| https:\/\/doi\.org\/10\.1\/a \| 200 \| avoid \| ok \(after 1 redirect\(s\), at https:\/\/medium\.com\/@someone\/a\) \|/);
+    assert.match(report, /\| B \| https:\/\/b\.example\.org\/b\.pdf \| 200 \| primary \| ok \(after 1 redirect\(s\), at https:\/\/arxiv\.org\/abs\/1\) \|/);
+  });
+
   it('a loopback URL in the seed is refused, never fetched, and fails --ci', async () => {
-    const dir = tempRepo(seedFiles('https://127.0.0.1:8080/admin'));
+    const dir = tempRepo(seedFiles('https://127.0.0.1/admin'));
     const fetchImpl = allOk();
     const { lines, log, err } = capture();
     assert.equal(await run(['--ci'], { repoRoot: dir, fetchImpl, resolveHost: resolver(), sleep: noSleep(), log, err, now: NOW }), 1);

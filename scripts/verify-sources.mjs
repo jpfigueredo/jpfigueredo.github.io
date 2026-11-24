@@ -1,22 +1,26 @@
 #!/usr/bin/env node
-// Source link verifier. Checks that the free sources of each trail seed still
-// answer over HTTPS, classifies each URL (primary / avoid / unclassified) and
-// writes a Markdown report.
+// Source link verifier. Checks that the free sources of each Ohara trail seed
+// still answer over HTTPS, classifies each URL (primary / avoid /
+// unclassified) and writes a Markdown report.
 //
-// What it reads:
-//   - Ohara trail seeds, from their one canonical place:
-//     packages/ohara-data/seed.*.json (format: packages/ohara-data/schema.json).
-//     A node's sources are objects; only `sourceType: "free"` sources are
-//     checked (the schema requires a `url` on them). Retail and preview-embed
-//     sources and the explainers (secondary material, not sources) are counted
-//     as "not checked" in the report.
-//   - Older datasets under web/src/data/**/seed.json, whose nodes[].sources[]
-//     are plain URL strings, plus their link-rules.json (canonical link
-//     suggestions).
+// What it reads: the Ohara trail seeds, from their one canonical place,
+// packages/ohara-data/seed.*.json (format: packages/ohara-data/schema.json).
+// A node's sources are objects; only `sourceType: "free"` sources are checked
+// (the schema requires a `url` on them). Retail and preview-embed sources and
+// the explainers (secondary material, not sources) are counted as "not
+// checked" in the report.
+//
+// What it no longer reads: web/src/data/**/seed.json (the sw-timeline
+// dataset). Nothing in the site imports it since the timeline app went
+// offline, and its broken links kept the --ci runs red, which would hide a
+// real break in the Ohara seed.
+//
+// Class: decided on the final URL, after redirects, so a resolver such as
+// doi.org does not make the target "primary" by inheritance.
 //
 // Network safety. The URLs come from reviewed seeds, but this runs on CI
 // runners, so every request is screened anyway:
-//   - https: only; URLs with credentials are refused;
+//   - https: only, on the default port; URLs with credentials are refused;
 //   - the host must not be (or resolve to) a loopback, private, link-local,
 //     CGNAT, multicast, documentation or otherwise reserved address, and
 //     single-label names and *.localhost are refused (SSRF against the runner
@@ -27,9 +31,13 @@
 //     generic one;
 //   - every request has a timeout, at most CONCURRENCY requests run at once,
 //     and a GET asks for one byte and drops the body.
-//   Residual risk: the address is screened before fetch() resolves the name
-//   again, so a host that changes its DNS answer in between (rebinding) is not
-//   caught. Acceptable for URLs that come from a reviewed file.
+//   Residual risk (TOCTOU): the address is screened before fetch() resolves the
+//   name again, so a host that changes its DNS answer in between (DNS
+//   rebinding) is not caught. Acceptable only because the URLs come from a
+//   reviewed, versioned file. If this code is ever reused with URLs that come
+//   from users or from fetched content, pinning is mandatory: connect to the
+//   screened address itself (a custom lookup on the connection), not to a
+//   second resolution of the name.
 //
 // Usage:
 //   node scripts/verify-sources.mjs [--ci | --warn] [--out <file>]
@@ -41,7 +49,7 @@
 
 import { lookup } from 'node:dns/promises';
 import { realpathSync } from 'node:fs';
-import { glob, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { BlockList, isIP } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,8 +57,6 @@ import { annotation, md, oneLine } from './lib/gate-report.mjs';
 
 export const OHARA_DATA_DIR = 'packages/ohara-data';
 export const OHARA_SEED_NAME = /^seed\.[a-z0-9-]+\.json$/;
-export const LEGACY_SEED_GLOB = 'web/src/data/**/seed.json';
-export const LEGACY_RULES_GLOB = 'web/src/data/**/link-rules.json';
 
 export const USER_AGENT = 'link-checker/1.0';
 export const TIMEOUT_MS = 15_000;
@@ -79,7 +85,7 @@ export function classify(url) {
   } catch {
     return { host: '', klass: 'avoid' };
   }
-  const host = u.hostname.toLowerCase();
+  const host = u.hostname.toLowerCase().replace(/\.$/, '');
   if (AVOID_DOMAINS.some((d) => onDomain(host, d)) || AVOID_PATHS.test(u.pathname)) return { host, klass: 'avoid' };
   if (PREFER_DOMAINS.some((d) => onDomain(host, d))) return { host, klass: 'primary' };
   return { host, klass: 'unclassified' };
@@ -106,11 +112,12 @@ for (const [net, prefix] of [
   ['240.0.0.0', 4], // reserved, broadcast
 ]) BLOCKED.addSubnet(net, prefix, 'ipv4');
 for (const [net, prefix] of [
-  ['::', 128], // unspecified
-  ['::1', 128], // loopback
+  ['::', 96], // unspecified, loopback and IPv4-compatible (::a.b.c.d)
+  ['::ffff:0:0:0', 96], // IPv4-translated (::ffff:0:a.b.c.d)
   ['64:ff9b::', 96], // NAT64
   ['64:ff9b:1::', 48], // local-use NAT64
   ['100::', 64], // discard
+  ['2001::', 32], // Teredo (tunnels to an embedded IPv4 address)
   ['2001:db8::', 32], // documentation
   ['2002::', 16], // 6to4 (embeds an IPv4 address)
   ['fc00::', 7], // unique local
@@ -153,6 +160,7 @@ export async function screenUrl(url, resolveHost = defaultResolveHost) {
   }
   if (u.protocol !== 'https:') return `scheme ${u.protocol} (https only)`;
   if (u.username || u.password) return 'credentials in URL';
+  if (u.port !== '') return `port ${u.port} (default https port only)`;
   const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
   if (!host) return 'no host';
   if (isIP(host)) return isBlockedAddress(host) ? `non-public address ${host}` : null;
@@ -284,22 +292,6 @@ export function oharaTargets(seed) {
   return { targets, notChecked };
 }
 
-// Older datasets: nodes[].sources[] are URL strings.
-export function legacyTargets(seed, rulesById = new Map()) {
-  const targets = [];
-  const suggestions = [];
-  for (const node of Array.isArray(seed?.nodes) ? seed.nodes : []) {
-    const sources = (Array.isArray(node?.sources) ? node.sources : []).filter((s) => typeof s === 'string');
-    const rule = rulesById.get(node?.id);
-    const preferred = Array.isArray(rule?.preferred) ? rule.preferred : [];
-    if (preferred.length && !preferred.some((p) => sources.includes(p))) {
-      suggestions.push({ id: String(node.id), label: node.label, preferred, notes: rule.notes ?? '' });
-    }
-    for (const url of sources) targets.push({ id: String(node.id), label: node.label, url });
-  }
-  return { targets, suggestions };
-}
-
 class InputError extends Error {}
 
 async function readJson(repoRoot, rel) {
@@ -308,12 +300,6 @@ async function readJson(repoRoot, rel) {
   } catch (err) {
     throw new InputError(`cannot read ${rel}: ${err.message}`);
   }
-}
-
-async function globRel(repoRoot, pattern) {
-  const out = [];
-  for await (const p of glob(pattern, { cwd: repoRoot })) out.push(p.split(path.sep).join('/'));
-  return out.sort();
 }
 
 export async function loadDatasets(repoRoot) {
@@ -327,15 +313,7 @@ export async function loadDatasets(repoRoot) {
   const datasets = [];
   for (const name of names) {
     const file = `${OHARA_DATA_DIR}/${name}`;
-    datasets.push({ file, kind: 'ohara', suggestions: [], ...oharaTargets(await readJson(repoRoot, file)) });
-  }
-  const rulesById = new Map();
-  for (const file of await globRel(repoRoot, LEGACY_RULES_GLOB)) {
-    const rules = (await readJson(repoRoot, file))?.rules;
-    for (const r of Array.isArray(rules) ? rules : []) rulesById.set(r?.id, r);
-  }
-  for (const file of await globRel(repoRoot, LEGACY_SEED_GLOB)) {
-    datasets.push({ file, kind: 'legacy', notChecked: 0, ...legacyTargets(await readJson(repoRoot, file), rulesById) });
+    datasets.push({ file, ...oharaTargets(await readJson(repoRoot, file)) });
   }
   return datasets;
 }
@@ -345,8 +323,8 @@ export async function loadDatasets(repoRoot) {
 const KLASS_ORDER = { primary: 0, unclassified: 1, avoid: 2 };
 
 export function resultText(r) {
-  if (r.ok) return r.redirects ? `ok (${r.redirects} redirect(s))` : 'ok';
   const at = r.redirects ? ` (after ${r.redirects} redirect(s), at ${r.finalUrl})` : '';
+  if (r.ok) return `ok${at}`;
   if (r.refused) return `REFUSED: ${r.refused}${at}`;
   return `${r.error ? `BROKEN: ${r.error}` : 'BROKEN'}${at}`;
 }
@@ -362,27 +340,25 @@ export function renderReport(datasets, generatedAt) {
     '',
     `Checked ${all.length} URL(s): ${all.length - broken - refused} ok, ${broken} broken, ${refused} refused.`,
     '',
-    'Class: primary = academic or institutional host; avoid = social, video or blogging host, or a ' +
-      'corporate/marketing path; unclassified = neither (author and project hosts land here).',
+    'Class, decided on the final URL after redirects: primary = academic or institutional host; avoid = ' +
+      'social, video or blogging host, or a corporate/marketing path; unclassified = neither (author and ' +
+      'project hosts land here).',
   ];
   for (const ds of datasets) {
-    lines.push('', `## ${md(ds.file)}`, '');
-    if (ds.kind === 'ohara') {
-      lines.push(
-        `Free sources (sourceType "free"), by node. Not checked: ${ds.notChecked} other URL(s) ` +
-          '(retail/preview-embed sources and explainers).',
-        '',
-      );
-    }
+    lines.push(
+      '',
+      `## ${md(ds.file)}`,
+      '',
+      `Free sources (sourceType "free"), by node. Not checked: ${ds.notChecked} other URL(s) ` +
+        '(retail/preview-embed sources and explainers).',
+      '',
+    );
     lines.push('| Node | URL | HTTP | Class | Result |', '|---|---|---:|---|---|');
     const rows = [...ds.results].sort(
       (a, b) => Number(a.ok) - Number(b.ok) || KLASS_ORDER[a.klass] - KLASS_ORDER[b.klass] || a.id.localeCompare(b.id),
     );
     for (const r of rows) {
       lines.push(`| ${md(r.label || r.id)} | ${md(r.url)} | ${r.status || '-'} | ${r.klass} | ${md(resultText(r))} |`);
-    }
-    for (const s of ds.suggestions) {
-      lines.push('', `Suggestion for ${md(s.label || s.id)}: add a canonical link (${s.preferred.map(md).join(', ')}). ${md(s.notes)}`);
     }
   }
   return `${lines.join('\n')}\n`;
@@ -420,7 +396,7 @@ export async function run(argv, { repoRoot, fetchImpl, resolveHost, sleep, log =
   for (const ds of datasets) ds.results = [];
   await mapLimit(jobs, CONCURRENCY, async ({ ds, t }) => {
     const res = await checkUrl(t.url, { fetchImpl, resolveHost, sleep });
-    ds.results.push({ ...t, ...res, klass: classify(t.url).klass });
+    ds.results.push({ ...t, ...res, klass: classify(res.finalUrl ?? t.url).klass });
   });
   const outPath = path.resolve(repoRoot, opts.out);
   await mkdir(path.dirname(outPath), { recursive: true });
