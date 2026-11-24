@@ -103,3 +103,40 @@ yarn ci:verify:links
 
 Veja mais detalhes em `scripts/verify-sources.mjs`.
 
+
+---
+
+## `extract-references.mjs` - Extrator de referências de uma fonte fixada
+
+Lê as páginas Markdown de um repositório aberto, **fixado por SHA** num arquivo de pino
+(ex.: `packages/ohara-data/sources/cah.pin.json`), e gera um manifesto JSON determinístico com o que cada
+página cita: links classificados (`rfc`, `nist`, `fips`, `attack`, `cisa`, `cve`, `vendor`, `other`) com id
+canônico quando existe (`RFC 8446`, `FIPS 197`, `SP 800-38D`, `T1110.001`, `CVE-2024-45678`), revisão e
+estágio em campos próprios, título, banner de status, cabeçalhos, linhas da tabela "Claims register" (com os
+links de todas as colunas) e os "Next:". Sem dependências e sem rede. A lógica de fence, code span, célula
+de tabela e HTML oculto fica em `scripts/lib/markdown-hidden.mjs`.
+
+O conteúdo da fonte e o próprio clone são tratados como não confiáveis: o extrator não clona nem executa
+nada do repositório e não roda git dentro do clone nem lê o config dele (lê os objetos por um repo bare
+temporário com `alternates`, com ambiente mínimo); confere o HEAD contra o pino e recalcula o SHA-1 do
+commit, das trees até `pagesDir` e de cada página; remove conteúdo oculto (comentários HTML, `<?...?>`,
+`<!X...>`, CDATA) e caracteres invisíveis e de controle antes de extrair; limita o tamanho por página; só
+guarda URLs `http(s)`, depois de decodificar entidades. Detalhes no cabeçalho do script.
+
+### Uso
+
+```bash
+# clone raso, num diretório novo, no SHA do pino: só objetos, sem checkout (nada do repositório é
+# escrito no worktree nem executado); o HEAD aponta para o SHA sem tocar em arquivos
+git init -q /tmp/fonte && git -C /tmp/fonte fetch -q --depth 1 https://github.com/<owner>/<repo>.git <sha>
+git -C /tmp/fonte update-ref --no-deref HEAD <sha>
+
+node scripts/extract-references.mjs --pin packages/ohara-data/sources/cah.pin.json --repo /tmp/fonte --out manifesto.json
+node scripts/extract-references.mjs ... --only-pinned   # só as páginas listadas no pino
+node scripts/extract-references.mjs ... --strict        # sai 1 se o formato do "Claims register" não bater
+node scripts/extract-references.mjs ... --run-info run.json --executor <rótulo>  # quem/quando, fora do manifesto
+node scripts/extract-references.mjs --diff a.json b.json  # páginas +/-, blob, banner, links e registro +/-
+```
+
+Saída: 0 ok; 1 clone diferente do pino (ou `--strict` com registro malformado); 2 uso, I/O ou git.
+Testes: `node --test scripts/extract-references.test.mjs`.

@@ -1,0 +1,33 @@
+{
+  "repo": "ChiefGyk3D/Clouds-Against-Humanity",
+  "sha": "3e4ad5070e998f049ec588f091d9d7b0646bcfdd",
+  "date": "2026-11-09",
+  "license": "Apache-2.0",
+  "pagesDir": "docs/wiki",
+  "pages": [
+    {
+      "path": "docs/wiki/Cryptography-Fundamentals-Symmetric-Asymmetric-Hashing-Certificates-and-Keys.md",
+      "blobSha": "1387fd7c7baf9b621777acbb1afd722d8528150c"
+    },
+    {
+      "path": "docs/wiki/Disk-and-File-Encryption-VeraCrypt-TrueCrypt-History-BitLocker-FileVault-and-LUKS.md",
+      "blobSha": "127f4051e9d5cd707ec05e971b97e8467deec292"
+    },
+    {
+      "path": "docs/wiki/Hardware-Security-Keys-YubiKey-Nitrokey-Smart-Cards-and-PIV.md",
+      "blobSha": "05399c9bd548eec1721b57e4656b74b23129fa68"
+    },
+    {
+      "path": "docs/wiki/Hardware-Security-Modules-What-They-Are-and-Building-Your-Own-with-pico2hsm.md",
+      "blobSha": "5d17ee4a280b4acf575c63c2d386f862abf266d6"
+    },
+    {
+      "path": "docs/wiki/Hashing-Encryption-and-Keys.md",
+      "blobSha": "596b94a6c0bebc0a432444c40376202691634d03"
+    },
+    {
+      "path": "docs/wiki/Password-Managers-and-Passkeys-What-Each-Protects-and-Where-They-Fail.md",
+      "blobSha": "603286a15c2d631637f3140d3554a15096350100"
+    }
+  ]
+}
