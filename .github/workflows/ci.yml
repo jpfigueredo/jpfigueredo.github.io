@@ -390,7 +390,7 @@ jobs:
         # REFERENCE_EXTRACTOR_MIN_TESTS pass, or any is skipped or todo.
         # Raise the number when you add tests.
         env:
-          REFERENCE_EXTRACTOR_MIN_TESTS: "164"
+          REFERENCE_EXTRACTOR_MIN_TESTS: "192"
         run: |
           node --test --test-reporter=tap scripts/extract-references.test.mjs | tee "$RUNNER_TEMP/reference-extractor-tests.tap"
           TAP="$RUNNER_TEMP/reference-extractor-tests.tap"
