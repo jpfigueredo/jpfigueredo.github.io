@@ -110,9 +110,11 @@ Veja mais detalhes em `scripts/verify-sources.mjs`.
 
 Lê as páginas Markdown de um repositório aberto, **fixado por SHA** num arquivo de pino
 (ex.: `packages/ohara-data/sources/cah.pin.json`), e gera um manifesto JSON determinístico com o que cada
-página cita: links classificados (`rfc`, `nist`, `fips`, `attack`, `cisa`, `vendor`, `other`) com id
-canônico quando existe (`RFC 8446`, `FIPS 197`, `SP 800-38D`, `T1110.001`), título, banner de status,
-cabeçalhos, linhas da tabela "Claims register" e os "Next:". Sem dependências e sem rede.
+página cita: links classificados (`rfc`, `nist`, `fips`, `attack`, `cisa`, `cve`, `vendor`, `other`) com id
+canônico quando existe (`RFC 8446`, `FIPS 197`, `SP 800-38D`, `T1110.001`, `CVE-2024-45678`), revisão e
+estágio em campos próprios, título, banner de status, cabeçalhos, linhas da tabela "Claims register" (com os
+links de todas as colunas) e os "Next:". Sem dependências e sem rede. A lógica de fence, code span, célula
+de tabela e HTML oculto fica em `scripts/lib/markdown-hidden.mjs`.
 
 O conteúdo da fonte e o próprio clone são tratados como não confiáveis: o extrator não clona nem executa
 nada do repositório e não roda git dentro do clone nem lê o config dele (lê os objetos por um repo bare
@@ -124,9 +126,10 @@ guarda URLs `http(s)`, depois de decodificar entidades. Detalhes no cabeçalho d
 ### Uso
 
 ```bash
-# clone raso, num diretório novo, no SHA do pino (nada do repositório é executado)
+# clone raso, num diretório novo, no SHA do pino: só objetos, sem checkout (nada do repositório é
+# escrito no worktree nem executado); o HEAD aponta para o SHA sem tocar em arquivos
 git init -q /tmp/fonte && git -C /tmp/fonte fetch -q --depth 1 https://github.com/<owner>/<repo>.git <sha>
-git -C /tmp/fonte -c advice.detachedHead=false checkout -q FETCH_HEAD
+git -C /tmp/fonte update-ref --no-deref HEAD <sha>
 
 node scripts/extract-references.mjs --pin packages/ohara-data/sources/cah.pin.json --repo /tmp/fonte --out manifesto.json
 node scripts/extract-references.mjs ... --only-pinned   # só as páginas listadas no pino
