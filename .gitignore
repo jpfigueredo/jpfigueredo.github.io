@@ -25,6 +25,7 @@ pnpm-lock.yaml
 .vscode/
 
 # Build artifacts
+reports/
 *.tsbuildinfo
 *.timestamp-*.mjs
 
