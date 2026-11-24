@@ -1,5 +1,7 @@
-# Checks that the free sources of the trail seeds still answer over HTTPS
-# (scripts/verify-sources.mjs) and publishes the report.
+# Checks that the free sources of the Ohara trail seeds
+# (packages/ohara-data/seed.*.json) still answer over HTTPS
+# (scripts/verify-sources.mjs) and publishes the report. web/src/data is not
+# read any more: nothing in the site imports that dataset.
 #
 # When it blocks:
 #   - push to develop or main, the weekly schedule and a manual run use --ci:
@@ -27,7 +29,6 @@ on:
     branches: [develop, main]
     paths:
       - 'packages/ohara-data/seed.*.json'
-      - 'web/src/data/**'
       - 'scripts/verify-sources.mjs'
       - 'scripts/lib/gate-report.mjs'
       - '.github/workflows/links.yml'
@@ -35,7 +36,6 @@ on:
     branches: [develop]
     paths:
       - 'packages/ohara-data/seed.*.json'
-      - 'web/src/data/**'
       - 'scripts/verify-sources.mjs'
       - 'scripts/lib/gate-report.mjs'
       - '.github/workflows/links.yml'

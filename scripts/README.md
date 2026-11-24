@@ -89,20 +89,22 @@ O node gerado é validado contra `web/src/data/sw-timeline/schema.json`. Campos 
 
 ## `verify-sources.mjs` - Verificador de Links
 
-Confere se as fontes livres dos seeds de trilha ainda respondem por HTTPS, classifica cada URL
-(`primary`, `avoid` ou `unclassified`) e gera `reports/links.md` (fora do git), por seed e por nó.
+Confere se as fontes livres dos seeds de trilha do Ohara ainda respondem por HTTPS, classifica cada URL
+(`primary`, `avoid` ou `unclassified`, pela URL final depois dos redirects) e gera `reports/links.md`
+(fora do git), por seed e por nó.
 
-- Seeds do Ohara: `packages/ohara-data/seed.*.json` (formato em `packages/ohara-data/schema.json`). Só as
-  fontes com `sourceType: "free"` são verificadas; as outras URLs (fontes `retail`/`preview-embed` e
+- Lê só `packages/ohara-data/seed.*.json` (formato em `packages/ohara-data/schema.json`). Só as fontes
+  com `sourceType: "free"` são verificadas; as outras URLs (fontes `retail`/`preview-embed` e
   explicadores) entram no relatório só como contagem de "não verificadas".
-- Seeds antigos em `web/src/data/**/seed.json` (fontes como strings) e as sugestões de
-  `link-rules.json`.
+- Não lê mais `web/src/data/**` (o dataset do sw-timeline): nada no site o importa, e os links quebrados
+  dele deixariam o `--ci` sempre vermelho, escondendo uma quebra real no seed do Ohara.
 
-Segurança: só `https:`; recusa URL com credencial, host em loopback, rede privada, link-local, metadados
-de nuvem e outros endereços reservados (também depois de um redirect); no máximo 5 redirects, cada um
+Segurança: só `https:` na porta padrão; recusa URL com credencial, host em loopback, rede privada,
+link-local, metadados de nuvem, IPv6 que embute IPv4 (compatível, traduzido, Teredo, 6to4, NAT64) e
+outros endereços reservados (também depois de um redirect); no máximo 5 redirects, cada um
 conferido de novo; timeout por requisição, 4 em paralelo, uma nova tentativa em erro de rede, 429 ou 5xx;
-User-Agent genérico, sem token nem cookie. Detalhes e o risco residual (DNS rebinding) no cabeçalho do
-script. Os testes (`verify-sources.test.mjs`) não usam rede: `fetch` e DNS são injetados.
+User-Agent genérico, sem token nem cookie. Detalhes e o risco residual (DNS rebinding: fixar o endereço
+é obrigatório se o código for reaproveitado com URL vinda de usuário) no cabeçalho do script. Os testes (`verify-sources.test.mjs`) não usam rede: `fetch` e DNS são injetados.
 
 ### Uso
 
@@ -128,7 +130,7 @@ com `--ci`; num PR para a `develop` que mexe num seed ou no verificador, roda co
 ## `check-seed-copies.mjs` - Guarda contra cópias do seed
 
 Falha se um seed de trilha do Ohara ou o schema dele estiver versionado fora de `packages/ohara-data`.
-Lê só o índice do git (`git ls-files -s '*.json'`), então arquivo não versionado não conta, e roda fora
+Lê só o índice do git (`git ls-files -s ':(icase)*.json'`), então arquivo não versionado não conta, e roda fora
 do turbo (nenhum cache pula). Um arquivo é dado do Ohara se tem nome `seed*.json` num caminho com
 "ohara", se tem a forma de seed (`trail.id` + `nodes[]`) ou se declara o `$id` do schema. Fixtures
 legítimas entram no `ALLOWLIST` do script, com motivo; entrada que não bate mais com nada falha.
