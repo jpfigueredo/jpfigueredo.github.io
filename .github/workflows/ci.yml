@@ -343,7 +343,14 @@ jobs:
           ADVISORY_GATE_MIN_TESTS: "70"
         run: |
           node --test --test-reporter=tap scripts/advisory-gate.test.mjs | tee "$RUNNER_TEMP/advisory-gate-tests.tap"
-          count() { sed -n "s/^# $1 \([0-9][0-9]*\)$/\1/p" "$RUNNER_TEMP/advisory-gate-tests.tap"; }
+          TAP="$RUNNER_TEMP/advisory-gate-tests.tap"
+          for k in pass fail skipped todo; do
+            if [ "$(grep -c "^# $k [0-9][0-9]*\$" "$TAP")" -ne 1 ]; then
+              echo "::error title=advisory gate self-test::The TAP summary line '# $k N' must appear exactly once (a test that prints it could fake the count)."
+              exit 2
+            fi
+          done
+          count() { sed -n "s/^# $1 \([0-9][0-9]*\)$/\1/p" "$TAP"; }
           pass="$(count pass)"; skipped="$(count skipped)"; todo="$(count todo)"
           echo "advisory gate tests: pass=${pass:-none} skipped=${skipped:-none} todo=${todo:-none} (minimum $ADVISORY_GATE_MIN_TESTS)"
           if [ -z "$pass" ] || [ "$pass" -lt "$ADVISORY_GATE_MIN_TESTS" ] || [ "${skipped:-1}" -ne 0 ] || [ "${todo:-1}" -ne 0 ]; then
@@ -360,11 +367,44 @@ jobs:
           LOCK_AGE_GATE_MIN_TESTS: "83"
         run: |
           node --test --test-reporter=tap scripts/lock-entry-ages.test.mjs scripts/lock-entry-ages.edges.test.mjs | tee "$RUNNER_TEMP/lock-age-gate-tests.tap"
-          count() { sed -n "s/^# $1 \([0-9][0-9]*\)$/\1/p" "$RUNNER_TEMP/lock-age-gate-tests.tap"; }
+          TAP="$RUNNER_TEMP/lock-age-gate-tests.tap"
+          for k in pass fail skipped todo; do
+            if [ "$(grep -c "^# $k [0-9][0-9]*\$" "$TAP")" -ne 1 ]; then
+              echo "::error title=lock age gate self-test::The TAP summary line '# $k N' must appear exactly once (a test that prints it could fake the count)."
+              exit 2
+            fi
+          done
+          count() { sed -n "s/^# $1 \([0-9][0-9]*\)$/\1/p" "$TAP"; }
           pass="$(count pass)"; skipped="$(count skipped)"; todo="$(count todo)"
           echo "lock age gate tests: pass=${pass:-none} skipped=${skipped:-none} todo=${todo:-none} (minimum $LOCK_AGE_GATE_MIN_TESTS)"
           if [ -z "$pass" ] || [ "$pass" -lt "$LOCK_AGE_GATE_MIN_TESTS" ] || [ "${skipped:-1}" -ne 0 ] || [ "${todo:-1}" -ne 0 ]; then
             echo "::error title=lock age gate self-test::Expected at least $LOCK_AGE_GATE_MIN_TESTS passing tests and none skipped or todo; got pass=${pass:-none} skipped=${skipped:-none} todo=${todo:-none}."
+            exit 1
+          fi
+
+      - name: Reference extractor tests
+        if: ${{ !cancelled() }}
+        # Unit tests of scripts/extract-references.mjs (no network: the
+        # sources are synthetic git repositories made in a temp dir). Same
+        # rules as the gate self-tests: fails if any test fails, fewer than
+        # REFERENCE_EXTRACTOR_MIN_TESTS pass, or any is skipped or todo.
+        # Raise the number when you add tests.
+        env:
+          REFERENCE_EXTRACTOR_MIN_TESTS: "192"
+        run: |
+          node --test --test-reporter=tap scripts/extract-references.test.mjs | tee "$RUNNER_TEMP/reference-extractor-tests.tap"
+          TAP="$RUNNER_TEMP/reference-extractor-tests.tap"
+          for k in pass fail skipped todo; do
+            if [ "$(grep -c "^# $k [0-9][0-9]*\$" "$TAP")" -ne 1 ]; then
+              echo "::error title=reference extractor tests::The TAP summary line '# $k N' must appear exactly once (a test that prints it could fake the count)."
+              exit 2
+            fi
+          done
+          count() { sed -n "s/^# $1 \([0-9][0-9]*\)$/\1/p" "$TAP"; }
+          pass="$(count pass)"; fail="$(count fail)"; skipped="$(count skipped)"; todo="$(count todo)"
+          echo "reference extractor tests: pass=${pass:-none} fail=${fail:-none} skipped=${skipped:-none} todo=${todo:-none} (minimum $REFERENCE_EXTRACTOR_MIN_TESTS)"
+          if [ -z "$pass" ] || [ "$pass" -lt "$REFERENCE_EXTRACTOR_MIN_TESTS" ] || [ "${fail:-1}" -ne 0 ] || [ "${skipped:-1}" -ne 0 ] || [ "${todo:-1}" -ne 0 ]; then
+            echo "::error title=reference extractor tests::Expected at least $REFERENCE_EXTRACTOR_MIN_TESTS passing tests and none failed, skipped or todo; got pass=${pass:-none} fail=${fail:-none} skipped=${skipped:-none} todo=${todo:-none}."
             exit 1
           fi
 
