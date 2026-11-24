@@ -1,17 +1,54 @@
+# Checks that the free sources of the trail seeds still answer over HTTPS
+# (scripts/verify-sources.mjs) and publishes the report.
+#
+# When it blocks:
+#   - push to develop or main, the weekly schedule and a manual run use --ci:
+#     a broken or refused link turns the run red;
+#   - a pull request into develop that touches a seed or the verifier runs it
+#     report-only (--warn): broken links show up as warnings and in the job
+#     summary, but the job stays green. Third-party hosts time out, rate-limit
+#     or block runners now and then, and that must not block an unrelated PR.
+#     The verifier's own code is gated without network in ci.yml
+#     ("Link verifier tests").
+#
+# Security model (the same for every trigger):
+#   - `pull_request` only, never `pull_request_target`: a PR (also from a
+#     fork) runs its own code with a read-only token and no secrets;
+#   - `contents: read` only, no secrets, no OIDC, no cache, credentials not
+#     persisted after checkout;
+#   - the verifier sends no token or cookie, uses a generic User-Agent, fetches
+#     https: only and refuses loopback, private, link-local and metadata
+#     addresses, also behind a redirect (see the script's header).
+
 name: Validate Primary Source Links
 
 on:
   push:
-    branches: [main]
+    branches: [develop, main]
     paths:
+      - 'packages/ohara-data/seed.*.json'
       - 'web/src/data/**'
       - 'scripts/verify-sources.mjs'
+      - 'scripts/lib/gate-report.mjs'
+      - '.github/workflows/links.yml'
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'packages/ohara-data/seed.*.json'
+      - 'web/src/data/**'
+      - 'scripts/verify-sources.mjs'
+      - 'scripts/lib/gate-report.mjs'
+      - '.github/workflows/links.yml'
   schedule:
-    - cron: '0 6 * * 1' # weekly, Mondays 06:00 UTC
+    - cron: '0 6 * * 1' # weekly, Mondays 06:00 UTC (default branch)
   workflow_dispatch: {}
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 defaults:
   run:
@@ -33,10 +70,24 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
+          package-manager-cache: false
 
       - name: Run link verifier
         # Node built-ins only, no install needed.
-        run: node scripts/verify-sources.mjs --ci
+        env:
+          MODE: ${{ github.event_name == 'pull_request' && '--warn' || '--ci' }}
+        run: |
+          node --version
+          node scripts/verify-sources.mjs "$MODE"
+
+      - name: Report in the job summary
+        if: ${{ always() }}
+        run: |
+          if [ -f reports/links.md ]; then
+            cat reports/links.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No report was written (the verifier stopped before checking)." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload report
         if: ${{ always() }}
@@ -44,3 +95,4 @@ jobs:
         with:
           name: links-report
           path: reports/links.md
+          if-no-files-found: warn

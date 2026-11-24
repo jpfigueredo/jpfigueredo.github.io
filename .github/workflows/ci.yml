@@ -1,6 +1,7 @@
 # Pull request checks.
 #   node-checks: a dependency advisory gate (OSV, yarn.lock and Cargo.lock),
 #                a minimum age (7 days) for every new lockfile entry,
+#                a guard against copies of the Ohara seed or schema,
 #                typecheck, tests (incl. seed-vs-schema validation), a guard
 #                against an empty or skipped test suite, lint and build.
 #   rust-checks: cargo fmt, clippy and tests for services/rust-api (clippy
@@ -405,6 +406,66 @@ jobs:
           echo "reference extractor tests: pass=${pass:-none} fail=${fail:-none} skipped=${skipped:-none} todo=${todo:-none} (minimum $REFERENCE_EXTRACTOR_MIN_TESTS)"
           if [ -z "$pass" ] || [ "$pass" -lt "$REFERENCE_EXTRACTOR_MIN_TESTS" ] || [ "${fail:-1}" -ne 0 ] || [ "${skipped:-1}" -ne 0 ] || [ "${todo:-1}" -ne 0 ]; then
             echo "::error title=reference extractor tests::Expected at least $REFERENCE_EXTRACTOR_MIN_TESTS passing tests and none failed, skipped or todo; got pass=${pass:-none} fail=${fail:-none} skipped=${skipped:-none} todo=${todo:-none}."
+            exit 1
+          fi
+
+      - name: Seed copy guard
+        if: ${{ !cancelled() }}
+        # Fails if a copy of an Ohara trail seed or of its schema is versioned
+        # outside packages/ohara-data (by name, by trail shape or by the
+        # schema's $id). Reads only the git index of the checkout, so
+        # untracked files cannot hide or fake anything, and runs outside turbo,
+        # so no task cache can skip it. Fixtures go in its ALLOWLIST.
+        run: node scripts/check-seed-copies.mjs
+
+      - name: Seed copy guard tests
+        if: ${{ !cancelled() }}
+        # Unit tests of scripts/check-seed-copies.mjs (throwaway git
+        # repositories in a temp dir). Fails if any test fails, fewer than
+        # SEED_COPY_GUARD_MIN_TESTS pass, or any is skipped or todo. Raise the
+        # number when you add tests.
+        env:
+          SEED_COPY_GUARD_MIN_TESTS: "25"
+        run: |
+          node --test --test-reporter=tap scripts/check-seed-copies.test.mjs | tee "$RUNNER_TEMP/seed-copy-guard-tests.tap"
+          TAP="$RUNNER_TEMP/seed-copy-guard-tests.tap"
+          for k in pass fail skipped todo; do
+            if [ "$(grep -c "^# $k [0-9][0-9]*\$" "$TAP")" -ne 1 ]; then
+              echo "::error title=seed copy guard tests::The TAP summary line '# $k N' must appear exactly once (a test that prints it could fake the count)."
+              exit 2
+            fi
+          done
+          count() { sed -n "s/^# $1 \([0-9][0-9]*\)$/\1/p" "$TAP"; }
+          pass="$(count pass)"; fail="$(count fail)"; skipped="$(count skipped)"; todo="$(count todo)"
+          echo "seed copy guard tests: pass=${pass:-none} fail=${fail:-none} skipped=${skipped:-none} todo=${todo:-none} (minimum $SEED_COPY_GUARD_MIN_TESTS)"
+          if [ -z "$pass" ] || [ "$pass" -lt "$SEED_COPY_GUARD_MIN_TESTS" ] || [ "${fail:-1}" -ne 0 ] || [ "${skipped:-1}" -ne 0 ] || [ "${todo:-1}" -ne 0 ]; then
+            echo "::error title=seed copy guard tests::Expected at least $SEED_COPY_GUARD_MIN_TESTS passing tests and none failed, skipped or todo; got pass=${pass:-none} fail=${fail:-none} skipped=${skipped:-none} todo=${todo:-none}."
+            exit 1
+          fi
+
+      - name: Link verifier tests
+        if: ${{ !cancelled() }}
+        # Unit tests of scripts/verify-sources.mjs, with no network: fetch and
+        # DNS are injected. They cover the https-only and SSRF screen (loopback,
+        # private, link-local and metadata addresses, also behind a redirect),
+        # the redirect limit, timeouts, headers and the report. The network run
+        # itself is in links.yml. Same count rules as above.
+        env:
+          LINK_VERIFIER_MIN_TESTS: "101"
+        run: |
+          node --test --test-reporter=tap scripts/verify-sources.test.mjs | tee "$RUNNER_TEMP/link-verifier-tests.tap"
+          TAP="$RUNNER_TEMP/link-verifier-tests.tap"
+          for k in pass fail skipped todo; do
+            if [ "$(grep -c "^# $k [0-9][0-9]*\$" "$TAP")" -ne 1 ]; then
+              echo "::error title=link verifier tests::The TAP summary line '# $k N' must appear exactly once (a test that prints it could fake the count)."
+              exit 2
+            fi
+          done
+          count() { sed -n "s/^# $1 \([0-9][0-9]*\)$/\1/p" "$TAP"; }
+          pass="$(count pass)"; fail="$(count fail)"; skipped="$(count skipped)"; todo="$(count todo)"
+          echo "link verifier tests: pass=${pass:-none} fail=${fail:-none} skipped=${skipped:-none} todo=${todo:-none} (minimum $LINK_VERIFIER_MIN_TESTS)"
+          if [ -z "$pass" ] || [ "$pass" -lt "$LINK_VERIFIER_MIN_TESTS" ] || [ "${fail:-1}" -ne 0 ] || [ "${skipped:-1}" -ne 0 ] || [ "${todo:-1}" -ne 0 ]; then
+            echo "::error title=link verifier tests::Expected at least $LINK_VERIFIER_MIN_TESTS passing tests and none failed, skipped or todo; got pass=${pass:-none} fail=${fail:-none} skipped=${skipped:-none} todo=${todo:-none}."
             exit 1
           fi
 
