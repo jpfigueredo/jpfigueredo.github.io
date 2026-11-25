@@ -542,7 +542,7 @@ jobs:
           yarn -s turbo run test --filter='!rust-api' --dry=json > "$RUNNER_TEMP/turbo-test-dry.json"
           yarn -s workspace @jpfig/ohara-front vitest run \
             --reporter=json --outputFile="$RUNNER_TEMP/ohara-front-vitest.json" > /dev/null
-          node --test --test-reporter=tap services/edge-proxy/test/*.test.mjs > "$RUNNER_TEMP/edge-proxy-tests.tap"
+          node --test --test-timeout=60000 --test-reporter=tap services/edge-proxy/test/*.test.mjs > "$RUNNER_TEMP/edge-proxy-tests.tap"
           node scripts/check-test-suite.mjs "$RUNNER_TEMP/turbo-test-dry.json" \
             "$RUNNER_TEMP/ohara-front-vitest.json" "$RUNNER_TEMP/edge-proxy-tests.tap"
 

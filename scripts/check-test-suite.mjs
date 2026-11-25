@@ -28,7 +28,7 @@
 //   yarn -s turbo run test --filter='!rust-api' --dry=json > turbo-dry.json
 //   yarn -s workspace @jpfig/ohara-front vitest run \
 //     --reporter=json --outputFile="$PWD/vitest.json"
-//   node --test --test-reporter=tap services/edge-proxy/test/*.test.mjs > edge-proxy.tap
+//   node --test --test-timeout=60000 --test-reporter=tap services/edge-proxy/test/*.test.mjs > edge-proxy.tap
 //   node scripts/check-test-suite.mjs turbo-dry.json vitest.json edge-proxy.tap
 
 import { readFileSync } from 'node:fs';
@@ -41,8 +41,8 @@ const EXPECTED_TEST_TASKS = ['@jpfig/ohara-front', 'edge-proxy'];
 const MIN_OHARA_FRONT_TESTS = 68;
 const MAX_OHARA_FRONT_SKIPPED = 0;
 
-// edge-proxy Worker tests, services/edge-proxy/test (20 tests on 2026-11-25).
-const MIN_EDGE_PROXY_TESTS = 20;
+// edge-proxy Worker tests, services/edge-proxy/test (31 tests on 2026-11-25).
+const MIN_EDGE_PROXY_TESTS = 31;
 const MAX_EDGE_PROXY_SKIPPED = 0;
 
 const [turboDryPath, vitestReportPath, edgeProxyTapPath] = process.argv.slice(2);

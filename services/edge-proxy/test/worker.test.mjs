@@ -6,7 +6,7 @@
 //   from wrangler's own package), so no extra dependency and no version drift.
 // - No network: every fetch the Worker makes goes to `fakeBff` or
 //   `droppingBff` below (Miniflare outboundService, in this process). The BFF
-//   hosts used here (`bff.test`, `your-cloud-run-host`) are never resolved.
+//   host used here (`bff.test`) is never resolved.
 // - Every Miniflare instance is disposed in `after`, so no workerd process is
 //   left behind.
 import { after, before, describe, test } from 'node:test';
@@ -36,10 +36,23 @@ const SECURITY_HEADERS = {
   'x-frame-options': 'SAMEORIGIN',
   'referrer-policy': 'no-referrer-when-downgrade',
   'permissions-policy': 'geolocation=(), microphone=(), camera=()',
+  'content-security-policy': [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "font-src 'self' data:",
+    "connect-src 'self' https:",
+    "frame-src 'self'",
+    "worker-src 'self' blob:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'self'",
+  ].join('; '),
 };
 const CORS_HEADERS = {
   'access-control-allow-origin': '*',
-  'access-control-allow-methods': 'GET,POST,OPTIONS',
+  'access-control-allow-methods': 'GET,POST,HEAD,OPTIONS',
   'access-control-allow-headers': 'Authorization,Content-Type',
 };
 
@@ -51,6 +64,8 @@ function assertHeaders(res, expected) {
 
 // Fake BFF (Miniflare `fetcher` outbound service: gets the exact Request the
 // Worker fetched). Records what reached it and answers by path.
+// `upstream` is one array shared by every test (reset in `call`), so the tests
+// must run one at a time: do not turn on `concurrency` in this file.
 const upstream = [];
 async function fakeBff(req) {
   const url = new URL(req.url);
@@ -136,10 +151,6 @@ describe('outside /api/ (BFF_HOST set)', () => {
     assert.equal(res.status, 200);
     assert.equal(text, 'edge-proxy ok');
     assertHeaders(res, SECURITY_HEADERS);
-    const csp = res.headers.get('content-security-policy');
-    assert.match(csp, /(^|; )default-src 'self'(;|$)/);
-    assert.match(csp, /(^|; )object-src 'none'(;|$)/);
-    assert.match(csp, /(^|; )frame-ancestors 'self'(;|$)/);
     assert.equal(res.headers.get('access-control-allow-origin'), null);
     assert.deepEqual(upstream, []);
   });
@@ -200,7 +211,6 @@ describe('proxy to the BFF (BFF_HOST set)', () => {
   test('proxied response gets the CORS and security headers', async () => {
     const { res } = await call(mf, '/api/echo');
     assertHeaders(res, { ...CORS_HEADERS, ...SECURITY_HEADERS });
-    assert.match(res.headers.get('content-security-policy'), /frame-ancestors 'self'/);
   });
 
   test('non-ASCII path reaches the BFF percent-encoded', async () => {
@@ -256,6 +266,24 @@ describe('proxy to the BFF (BFF_HOST set)', () => {
     assert.equal(res.headers.get('set-cookie'), 'a=1');
   });
 
+  test('HEAD is proxied', async () => {
+    const { res, text, upstream } = await call(mf, '/api/echo', { method: 'HEAD' });
+    assert.equal(res.status, 200);
+    assert.equal(text, '');
+    assert.equal(upstream.length, 1);
+    assert.equal(upstream[0].method, 'HEAD');
+  });
+
+  for (const method of ['PUT', 'DELETE', 'PATCH']) {
+    test(`${method} gets 405 with Allow and never reaches the BFF`, async () => {
+      const { res, upstream } = await call(mf, '/api/echo', { method, body: method === 'DELETE' ? undefined : 'p' });
+      assert.equal(res.status, 405);
+      assert.equal(res.headers.get('allow'), 'GET, POST, HEAD, OPTIONS');
+      assertHeaders(res, { ...CORS_HEADERS, ...SECURITY_HEADERS });
+      assert.deepEqual(upstream, []);
+    });
+  }
+
   test('BFF redirect is returned, not followed', async () => {
     const { res, upstream } = await call(mf, '/api/redirect', { redirect: 'manual' });
     assert.equal(res.status, 302);
@@ -285,19 +313,37 @@ describe('BFF_HOST with a port', () => {
   });
 });
 
-describe('BFF_HOST missing', () => {
-  let mf;
-  before(() => {
-    mf = startWorker(undefined);
-  });
+// Missing, invalid or placeholder BFF_HOST: /api/ answers 503 and nothing
+// leaves the Worker.
+for (const [label, bffHost] of [
+  ['missing', undefined],
+  ['the wrangler.toml placeholder', 'api.example.com'],
+  ['the old fallback placeholder', 'your-cloud-run-host'],
+  ['a placeholder with a port', 'api.example.com:443'],
+  ['a URL with a scheme', 'https://x'],
+  ['with credentials', 'a@b'],
+  ['upper case', 'BFF.test'],
+  ['a port above 65535', 'bff.test:70000'],
+]) {
+  describe(`BFF_HOST ${label}`, () => {
+    let mf;
+    before(() => {
+      mf = startWorker(bffHost);
+    });
 
-  test('/api/ falls back to the placeholder host', async () => {
-    const { upstream } = await call(mf, '/api/echo?q=1');
-    assert.equal(upstream.length, 1);
-    assert.equal(upstream[0].url, 'https://your-cloud-run-host/api/echo?q=1');
+    test('/api/ answers 503 without calling the BFF', async () => {
+      const { res, text, upstream } = await call(mf, '/api/echo?q=1');
+      assert.equal(res.status, 503);
+      assert.equal(text, 'upstream not configured');
+      assertHeaders(res, { ...CORS_HEADERS, ...SECURITY_HEADERS });
+      assert.deepEqual(upstream, []);
+    });
   });
+}
 
+describe('BFF_HOST missing, outside /api/', () => {
   test('GET / still answers locally', async () => {
+    const mf = startWorker(undefined);
     const { res, text, upstream } = await call(mf, '/');
     assert.equal(res.status, 200);
     assert.equal(text, 'edge-proxy ok');
