@@ -55,15 +55,23 @@ updates:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
     labels: []
-    # A dependency goes to the first group it matches, so `three` comes
-    # first: three (a dependency) and @types/three (a devDependency) must
-    # move together.
+    # A dependency goes to the first group it matches, so `three` and
+    # `wrangler` come first: three (a dependency) and @types/three (a
+    # devDependency) must move together.
     groups:
       three:
         applies-to: version-updates
         patterns:
           - "three"
           - "@types/three"
+      # wrangler gets a PR of its own, outside npm-development: it is the
+      # deploy tool of edge-proxy.yml (it runs with the Cloudflare token), and
+      # a new version can change what a deploy uploads. PR CI does not run it
+      # against Cloudflare (CONTRIBUTING.md, "Not covered by PR CI").
+      wrangler:
+        applies-to: version-updates
+        patterns:
+          - "wrangler"
       npm-development:
         applies-to: version-updates
         dependency-type: "development"
