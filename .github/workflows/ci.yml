@@ -556,8 +556,25 @@ jobs:
         # (rust-checks compiles it). Catches what only the bundler sees, e.g. an
         # import of a file that does not exist. Output stays on the runner: no
         # artifact upload, no deploy.
+        id: build
         run: yarn turbo run build --filter='!rust-api'
 
+      - name: Guard against a skipped edge-proxy build
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        # `turbo run build` exits 0 when a package has no `build` script, so
+        # the Worker bundle could silently stop being checked here and a
+        # bundling error would first show up in the production deploy. The
+        # build writes services/edge-proxy/dist/index.js; it must exist. The
+        # checkout is fresh and the turbo cache starts empty on every run (see
+        # TURBO_CACHE above), so the file can only come from this run's build.
+        run: |
+          bundle=services/edge-proxy/dist/index.js
+          if [ ! -s "$bundle" ]; then
+            echo "::error title=edge-proxy build guard::$bundle was not built: the edge-proxy \"build\" script is missing or did not run in turbo run build."
+            exit 1
+          fi
+          ls -l "$bundle"
+          sha256sum "$bundle"
 
   rust-checks:
     name: rust-checks
