@@ -533,16 +533,18 @@ jobs:
       - name: Guard against an empty or skipped test suite
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         # `turbo run test` exits 0 when no package has a test script, and
-        # vitest exits 0 when tests are skipped. This fails if an expected test
-        # task disappears, or if the ohara-front suite drops below its minimum
-        # test count or has skipped/todo tests. Expected numbers and how to
-        # update them: scripts/check-test-suite.mjs.
+        # vitest and `node --test` exit 0 when tests are skipped. This fails if
+        # an expected test task disappears, or if the ohara-front or edge-proxy
+        # suite drops below its minimum test count or has skipped/todo tests.
+        # Expected numbers and how to update them: scripts/check-test-suite.mjs.
         # Keep the --filter equal to the Test step's.
         run: |
           yarn -s turbo run test --filter='!rust-api' --dry=json > "$RUNNER_TEMP/turbo-test-dry.json"
           yarn -s workspace @jpfig/ohara-front vitest run \
             --reporter=json --outputFile="$RUNNER_TEMP/ohara-front-vitest.json" > /dev/null
-          node scripts/check-test-suite.mjs "$RUNNER_TEMP/turbo-test-dry.json" "$RUNNER_TEMP/ohara-front-vitest.json"
+          node --test --test-reporter=tap services/edge-proxy/test/*.test.mjs > "$RUNNER_TEMP/edge-proxy-tests.tap"
+          node scripts/check-test-suite.mjs "$RUNNER_TEMP/turbo-test-dry.json" \
+            "$RUNNER_TEMP/ohara-front-vitest.json" "$RUNNER_TEMP/edge-proxy-tests.tap"
 
       - name: Lint
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
@@ -555,6 +557,7 @@ jobs:
         # import of a file that does not exist. Output stays on the runner: no
         # artifact upload, no deploy.
         run: yarn turbo run build --filter='!rust-api'
+
 
   rust-checks:
     name: rust-checks

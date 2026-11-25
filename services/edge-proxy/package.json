@@ -7,6 +7,7 @@
     "dev": "wrangler dev",
     "build": "WRANGLER_SEND_METRICS=false WRANGLER_HIDE_BANNER=true wrangler deploy --dry-run --outdir dist",
     "typecheck": "WRANGLER_SEND_METRICS=false WRANGLER_HIDE_BANNER=true wrangler types && tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/*.test.mjs",
     "deploy": "wrangler deploy"
   },
   "devDependencies": {

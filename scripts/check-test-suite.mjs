@@ -2,50 +2,69 @@
 // Fails CI when the test suite silently shrinks.
 //
 // `turbo run test` exits 0 with "No tasks were executed" when no package has a
-// `test` script, and vitest exits 0 when tests are skipped (`describe.skip`,
-// `it.skip`, `it.todo`). Both look green. This check reads two reports and
-// fails if:
+// `test` script, and vitest and `node --test` exit 0 when tests are skipped
+// (`describe.skip`, `it.skip`, `it.todo`, `test.skip`). All look green. This
+// check reads three reports and fails if:
 //   - a package listed in EXPECTED_TEST_TASKS has no real `test` task in the
 //     turbo task graph (script removed or renamed);
 //   - the ohara-front vitest run has fewer than MIN_OHARA_FRONT_TESTS passing
 //     tests, any failed test, or more than MAX_OHARA_FRONT_SKIPPED
-//     skipped/todo tests.
+//     skipped/todo tests;
+//   - the edge-proxy `node --test` run (TAP) has fewer than
+//     MIN_EDGE_PROXY_TESTS passing tests, any failed or cancelled test, or
+//     more than MAX_EDGE_PROXY_SKIPPED skipped/todo tests.
 //
 // Skipped tests fail the check (MAX_OHARA_FRONT_SKIPPED = 0) on purpose: a
 // skip hides a hole exactly like a deleted test does. If a skip is really
 // needed, raise the limit in the same PR, so the reviewer sees it.
 //
-// Updating the numbers: when a PR adds tests, raise MIN_OHARA_FRONT_TESTS to
-// the new "passed" count printed by this script (keep it equal to the real count, so
-// a later deletion is caught). When a PR removes tests on purpose, lower it in
-// the same PR. When a new package gets a `test` script, add it to
-// EXPECTED_TEST_TASKS.
+// Updating the numbers: when a PR adds tests, raise MIN_OHARA_FRONT_TESTS or
+// MIN_EDGE_PROXY_TESTS to the new "passed" count printed by this script (keep
+// it equal to the real count, so a later deletion is caught). When a PR
+// removes tests on purpose, lower it in the same PR. When a new package gets a
+// `test` script, add it to EXPECTED_TEST_TASKS.
 //
 // Usage:
 //   yarn -s turbo run test --filter='!rust-api' --dry=json > turbo-dry.json
 //   yarn -s workspace @jpfig/ohara-front vitest run \
 //     --reporter=json --outputFile="$PWD/vitest.json"
-//   node scripts/check-test-suite.mjs turbo-dry.json vitest.json
+//   node --test --test-reporter=tap services/edge-proxy/test/*.test.mjs > edge-proxy.tap
+//   node scripts/check-test-suite.mjs turbo-dry.json vitest.json edge-proxy.tap
 
 import { readFileSync } from 'node:fs';
 
 // Packages that must have a real `test` task in the turbo graph.
-const EXPECTED_TEST_TASKS = ['@jpfig/ohara-front'];
+const EXPECTED_TEST_TASKS = ['@jpfig/ohara-front', 'edge-proxy'];
 
 // @jpfig/ohara-front vitest suite (68 tests in 3 files on 2026-11-24; the
 // seed copy guard moved out of schema.test.ts to scripts/check-seed-copies.mjs).
 const MIN_OHARA_FRONT_TESTS = 68;
 const MAX_OHARA_FRONT_SKIPPED = 0;
 
-const [turboDryPath, vitestReportPath] = process.argv.slice(2);
-if (!turboDryPath || !vitestReportPath) {
-  console.error('usage: node scripts/check-test-suite.mjs <turbo-dry.json> <vitest-report.json>');
+// edge-proxy Worker tests, services/edge-proxy/test (20 tests on 2026-11-25).
+const MIN_EDGE_PROXY_TESTS = 20;
+const MAX_EDGE_PROXY_SKIPPED = 0;
+
+const [turboDryPath, vitestReportPath, edgeProxyTapPath] = process.argv.slice(2);
+if (!turboDryPath || !vitestReportPath || !edgeProxyTapPath) {
+  console.error(
+    'usage: node scripts/check-test-suite.mjs <turbo-dry.json> <vitest-report.json> <edge-proxy-tests.tap>',
+  );
   process.exit(2);
+}
+
+function readText(file, what) {
+  try {
+    return readFileSync(file, 'utf8');
+  } catch (err) {
+    console.error(`could not read ${what} from ${file}: ${err.message}`);
+    process.exit(1);
+  }
 }
 
 function readJson(file, what) {
   try {
-    return JSON.parse(readFileSync(file, 'utf8'));
+    return JSON.parse(readText(file, what));
   } catch (err) {
     console.error(`could not read ${what} from ${file}: ${err.message}`);
     process.exit(1);
@@ -90,6 +109,37 @@ if (notRun.length > MAX_OHARA_FRONT_SKIPPED) {
   errors.push(
     `@jpfig/ohara-front has ${notRun.length} skipped/todo tests, at most ${MAX_OHARA_FRONT_SKIPPED} allowed:\n${names.join('\n')}`,
   );
+}
+
+// 3. edge-proxy `node --test` TAP report. Each summary line (`# pass N`, ...)
+// must appear exactly once at the start of a line, so a test that prints one
+// cannot fake the count (same rule as the script self-tests in ci.yml).
+const tap = readText(edgeProxyTapPath, 'edge-proxy TAP report');
+const tapCount = (key) => {
+  const found = [...tap.matchAll(new RegExp(`^# ${key} (\\d+)$`, 'gm'))];
+  if (found.length !== 1) {
+    errors.push(`edge-proxy TAP report: the summary line '# ${key} N' appears ${found.length} times, expected once`);
+    return undefined;
+  }
+  return Number(found[0][1]);
+};
+const ep = Object.fromEntries(['pass', 'fail', 'cancelled', 'skipped', 'todo'].map((k) => [k, tapCount(k)]));
+console.log(
+  `edge-proxy node --test: passed=${ep.pass} failed=${ep.fail} cancelled=${ep.cancelled} ` +
+    `skipped=${ep.skipped} todo=${ep.todo} (min passed ${MIN_EDGE_PROXY_TESTS}, max skipped ${MAX_EDGE_PROXY_SKIPPED})`,
+);
+if (Object.values(ep).every((n) => n !== undefined)) {
+  if (ep.pass < MIN_EDGE_PROXY_TESTS) {
+    errors.push(`edge-proxy ran ${ep.pass} passing tests, expected at least ${MIN_EDGE_PROXY_TESTS}`);
+  }
+  if (ep.fail + ep.cancelled > 0) {
+    errors.push(`edge-proxy has ${ep.fail} failed and ${ep.cancelled} cancelled tests`);
+  }
+  if (ep.skipped + ep.todo > MAX_EDGE_PROXY_SKIPPED) {
+    errors.push(
+      `edge-proxy has ${ep.skipped + ep.todo} skipped/todo tests, at most ${MAX_EDGE_PROXY_SKIPPED} allowed`,
+    );
+  }
 }
 
 if (errors.length > 0) {
