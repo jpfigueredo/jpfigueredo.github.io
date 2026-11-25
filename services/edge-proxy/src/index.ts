@@ -51,4 +51,4 @@ export default {
 
     return withSecurityHeaders(new Response('edge-proxy ok', { status: 200 }));
   }
-} satisfies ExportedHandler;
+} satisfies ExportedHandler<{ BFF_HOST?: string }>;
