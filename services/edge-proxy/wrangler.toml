@@ -6,14 +6,15 @@ compatibility_date = "2024-09-01"
 # (or the Cloudflare API) picks the default, and some of those defaults changed
 # in wrangler 4. Keys and defaults: node_modules/wrangler/config-schema.json.
 
-# workers.dev is this Worker's only public URL (there are no `routes`), and the
-# front end points at it (packages/config, `edgeProxyUrl`), so it stays on.
+# workers.dev is this Worker's only URL today (there are no `routes`), so it
+# stays on. Moving to a Custom Domain is a separate change.
 workers_dev = true
 
 # No per-version Preview URLs (<version>-edge-proxy.<subdomain>.workers.dev).
 # Deploys use `wrangler deploy`, nothing reads a preview, and each one would be
-# one more public URL that proxies to the BFF. When this key is missing,
-# wrangler sends no value and the API decides.
+# one more public URL that proxies to the BFF. The schema lists a default of
+# `false`, but it does not apply here: when the key is missing, wrangler sends
+# no value (undefined) and the API decides.
 preview_urls = false
 
 # Do not upload dist/index.js.map with the Worker (wrangler 4 does by default).
@@ -29,5 +30,7 @@ send_metrics = false
 [dependencies_instrumentation]
 enabled = false
 
+# Placeholder: with it, /api/ answers 503 (the Worker refuses placeholder and
+# invalid hosts). The deploy sets the real host with --var.
 [vars]
 BFF_HOST = "api.example.com"

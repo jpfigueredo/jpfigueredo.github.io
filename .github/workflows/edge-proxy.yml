@@ -34,8 +34,9 @@ defaults:
 
 # Every wrangler command in this workflow, including the ones that hold the
 # Cloudflare token: no usage metrics (wrangler.toml also sets send_metrics),
-# and no banner, which also skips wrangler's update check (a request to the
-# npm registry from the step that holds the token).
+# and no banner, which also skips the banner's update check (a request to the
+# npm registry). wrangler still queries the npm registry, without the token,
+# on some error paths (to suggest a newer version).
 env:
   WRANGLER_SEND_METRICS: "false"
   WRANGLER_HIDE_BANNER: "true"
