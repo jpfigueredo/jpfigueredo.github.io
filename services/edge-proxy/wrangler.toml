@@ -30,6 +30,44 @@ send_metrics = false
 [dependencies_instrumentation]
 enabled = false
 
+# Workers Logs. Without this block, every `wrangler deploy` sends
+# `observability: { enabled: false }` to the script settings and turns off
+# logs that were enabled in the dashboard, so the settings live here.
+#
+# This Worker proxies /api/ requests that carry `Authorization` and `Cookie`.
+# Invocation logs (one automatic log per request, with request and response
+# details) stay off: Cloudflare does not document which request fields they
+# store, so they are not trusted with credentials. Instead, src/index.ts
+# writes one JSON line per /api/ request with an allowlist of fields: method,
+# route (a known BFF path, else /api/:other; never the query string), status,
+# reason and upstream_ms. Never log
+# headers, cookies, IP, user agent, query strings, bodies or error messages
+# (the tests check that marked credentials do not reach the log). Turning
+# invocation logs on is a separate, reviewed change.
+[observability]
+enabled = true
+# Keep every log (low traffic).
+head_sampling_rate = 1
+# If a request URL reaches a log or trace, store it without the query string.
+redact_query_string = true
+
+[observability.logs]
+enabled = true
+invocation_logs = false
+# Stored by Cloudflare and queryable in the dashboard (the schema default).
+persist = true
+# No export to other destinations (OpenTelemetry).
+destinations = []
+
+# Traces (spans for each request and its subrequests to the BFF): not needed.
+[observability.traces]
+enabled = false
+
+# Workers Issues (grouping of production errors): off until what it stores is
+# reviewed.
+[observability.issues]
+enabled = false
+
 # Placeholder: with it, /api/ answers 503 (the Worker refuses placeholder and
 # invalid hosts). The deploy sets the real host with --var.
 [vars]
