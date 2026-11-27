@@ -576,6 +576,34 @@ jobs:
           ls -l "$bundle"
           sha256sum "$bundle"
 
+      - name: Guard against the react-router development build in web
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        # react-router 7 exports only its development build
+        # (remix-run/react-router#14102, fixed in v8), so web/vite.config.ts
+        # aliases it to the package's dist/production for `vite build`. If the
+        # alias stops applying, the build still passes but the published site
+        # shows the "Hey developer" note and logs dev warnings. Both strings
+        # below are dev-only: present once in a bundle built without the alias,
+        # absent from the production build. Two of them, so one rewording
+        # upstream does not blind the guard. grep exit 1 (no match) passes;
+        # 0 (match) fails; anything else (unreadable file) is exit 2.
+        run: |
+          shopt -s nullglob
+          bundles=(web/dist/assets/*.js)
+          if [ "${#bundles[@]}" -eq 0 ]; then
+            echo "::error title=react-router build guard::no web/dist/assets/*.js: web was not built."
+            exit 1
+          fi
+          rc=0
+          grep -l -F -e 'Hey developer' -e 'No routes matched location' "${bundles[@]}" || rc=$?
+          case "$rc" in
+            0) echo "::error title=react-router build guard::the files above contain the react-router development build. Check the react-router alias in web/vite.config.ts."
+               exit 1 ;;
+            1) echo "OK: no react-router development build in ${#bundles[@]} web bundle(s)." ;;
+            *) echo "::error title=react-router build guard::grep failed (exit $rc)."
+               exit 2 ;;
+          esac
+
   rust-checks:
     name: rust-checks
     runs-on: ubuntu-24.04

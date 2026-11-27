@@ -73,30 +73,6 @@
       "reason": "Build time only: zip is a [build-dependencies] of utoipa-swagger-ui 6.0.0, whose build.rs unpacks the Swagger UI archive bundled inside the crate (content pinned by the Cargo.lock checksum, no AES). zip is not in the API binary and never reads a file from a user. Goes away with the axum 0.8 / utoipa upgrade.",
       "justification": "vulnerable_code_not_in_execute_path",
       "reviewBy": "2026-12-19"
-    },
-    {
-      "id": "GHSA-337j-9hxr-rhxg",
-      "ecosystem": "npm",
-      "package": "react-router",
-      "version": "6.30.6",
-      "paths": [
-        "web"
-      ],
-      "reason": "The flaw is in deserializeErrors(), used only to hydrate server-rendered (SSR) data. web is a client-side SPA with no SSR and no hydration data. No fix in react-router 6.x.",
-      "justification": "vulnerable_code_not_in_execute_path",
-      "reviewBy": "2027-02-17"
-    },
-    {
-      "id": "GHSA-wrjc-x8rr-h8h6",
-      "ecosystem": "npm",
-      "package": "react-router",
-      "version": "6.30.6",
-      "paths": [
-        "web"
-      ],
-      "reason": "Open redirect when an attacker controls the path given to <Link> or useNavigate. web only passes constant, in-app paths to them. No fix in react-router 6.x.",
-      "justification": "vulnerable_code_cannot_be_controlled_by_adversary",
-      "reviewBy": "2027-02-17"
     }
   ]
 }
