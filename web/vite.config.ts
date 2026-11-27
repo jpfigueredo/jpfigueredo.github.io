@@ -6,9 +6,12 @@ import mdx from '@mdx-js/rollup';
 
 // react-router 7 só exporta o build de desenvolvimento (dist/development): sem
 // isto o site publicado mostra o aviso "Hey developer" e loga no console na
-// página de erro/404. O build de produção vem no mesmo pacote (dist/production);
-// o modo Framework e a v8 já resolvem para ele. Só no `vite build`: o servidor
-// de dev continua com os avisos.
+// página de erro/404. O build de produção vem no mesmo pacote (dist/production).
+// Problema conhecido do pacote (remix-run/react-router#14102), resolvido só na
+// v8, que escolhe o build pela condição `development` do exports: este alias
+// pode sair na v8. Só no `vite build`: o servidor de dev continua com os
+// avisos. O CI falha se o build de dev voltar ao bundle (ci.yml, "Guard
+// against the react-router development build in web").
 const reactRouterProd = path.join(
   path.dirname(createRequire(import.meta.url).resolve('react-router/package.json')),
   'dist/production',
