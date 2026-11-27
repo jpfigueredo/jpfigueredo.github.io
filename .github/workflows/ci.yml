@@ -593,7 +593,7 @@ jobs:
       # Minimum number of Rust tests that must pass (route tests in
       # services/rust-api/src/main.rs). Raise it when you add tests; see
       # scripts/check-cargo-tests.sh.
-      RUST_MIN_TESTS: "9"
+      RUST_MIN_TESTS: "19"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

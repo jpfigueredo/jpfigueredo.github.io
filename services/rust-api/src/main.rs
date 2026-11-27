@@ -429,4 +429,126 @@ mod tests {
         let (status, _) = get("/does-not-exist").await;
         assert_eq!(status, StatusCode::NOT_FOUND);
     }
+
+    #[tokio::test]
+    async fn openapi_spec_is_3_1_and_declares_the_id_path_param() {
+        let (status, body) = get("/api-docs/openapi.json").await;
+        assert_eq!(status, StatusCode::OK);
+        let spec = json(&body);
+        assert_eq!(spec["openapi"], "3.1.0");
+        let params = spec["paths"]["/api/v1/items/{id}"]["get"]["parameters"]
+            .as_array()
+            .expect("parameters of GET /api/v1/items/{id}");
+        assert!(
+            params
+                .iter()
+                .any(|p| p["name"] == "id" && p["in"] == "path" && p["required"] == true),
+            "id path parameter missing: {params:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn item_id_is_percent_decoded_before_lookup() {
+        let (status, body) = get("/api/v1/items/exampl%65").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json(&body)["id"], "example");
+    }
+
+    #[tokio::test]
+    async fn item_id_with_invalid_utf8_is_rejected_with_400() {
+        let (status, body) = get("/api/v1/items/%FF").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let text = String::from_utf8(body).expect("UTF-8 body");
+        assert!(text.contains("Invalid UTF-8"), "unexpected body: {text}");
+    }
+
+    #[tokio::test]
+    async fn item_routes_do_not_match_empty_trailing_or_extra_segments() {
+        for uri in [
+            "/api/v1/items/",
+            "/api/v1/items/example/",
+            "/api/v1/items/example/extra",
+            "/health/",
+        ] {
+            let (status, _) = get(uri).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{uri}");
+        }
+    }
+
+    #[tokio::test]
+    async fn wrong_method_returns_405_with_allow_header() {
+        for (method, uri, allow) in [
+            (Method::POST, "/health", "GET,HEAD"),
+            (Method::DELETE, "/api/v1/items/example", "GET,HEAD"),
+            (Method::GET, "/api/v1/items", "POST"),
+        ] {
+            let request = Request::builder()
+                .method(method.clone())
+                .uri(uri)
+                .body(Body::empty())
+                .unwrap();
+            let response = app().oneshot(request).await.expect("router is infallible");
+            assert_eq!(
+                response.status(),
+                StatusCode::METHOD_NOT_ALLOWED,
+                "{method} {uri}"
+            );
+            assert_eq!(response.headers()[header::ALLOW], allow, "{method} {uri}");
+        }
+    }
+
+    #[tokio::test]
+    async fn create_item_with_malformed_json_returns_400() {
+        let (status, _) = post_json("/api/v1/items", r#"{"name":"#).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn create_item_without_json_content_type_returns_415() {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/api/v1/items")
+            .header(header::CONTENT_TYPE, "text/plain")
+            .body(Body::from(r#"{"name":"Widget"}"#))
+            .unwrap();
+        let (status, _) = send(request).await;
+        assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    }
+
+    #[tokio::test]
+    async fn timeline_today_ignores_page_and_per_page_query() {
+        // Characterization test: it pins today's behavior, not the intended
+        // one. The handler accepts and ignores page/per_page (invalid values
+        // included), although the OpenAPI doc lists them as parameters.
+        for uri in [
+            "/api/timeline?page=2&per_page=5",
+            "/api/timeline?page=abc&per_page=-1",
+        ] {
+            let (status, body) = get(uri).await;
+            assert_eq!(status, StatusCode::OK, "{uri}");
+            assert_eq!(json(&body)["page"], 1, "{uri}");
+        }
+    }
+
+    #[tokio::test]
+    async fn swagger_ui_without_trailing_slash_redirects_to_it() {
+        let request = Request::builder()
+            .uri("/swagger-ui")
+            .body(Body::empty())
+            .unwrap();
+        let response = app().oneshot(request).await.expect("router is infallible");
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(response.headers()[header::LOCATION], "/swagger-ui/");
+    }
+
+    #[tokio::test]
+    async fn cors_is_permissive_for_any_origin() {
+        let request = Request::builder()
+            .uri("/health")
+            .header(header::ORIGIN, "https://example.org")
+            .body(Body::empty())
+            .unwrap();
+        let response = app().oneshot(request).await.expect("router is infallible");
+        assert_eq!(response.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*");
+    }
 }
