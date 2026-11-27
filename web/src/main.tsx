@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createBrowserRouter, RouterProvider, Link, Navigate, useLocation } from 'react-router-dom';
+import { createBrowserRouter, Link, Navigate, useLocation } from 'react-router';
+import { RouterProvider } from 'react-router/dom';
 import { useTranslation } from 'react-i18next';
 import { PageContainer, NeonText } from '@jpfig/ui';
 import { apps as configApps } from '@jpfig/config';

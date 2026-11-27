@@ -1,19 +1,43 @@
+import { createRequire } from 'node:module';
+import path from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import mdx from '@mdx-js/rollup';
 
-export default defineConfig({
+// react-router 7 só exporta o build de desenvolvimento (dist/development): sem
+// isto o site publicado mostra o aviso "Hey developer" e loga no console na
+// página de erro/404. O build de produção vem no mesmo pacote (dist/production).
+// Problema conhecido do pacote (remix-run/react-router#14102), resolvido só na
+// v8, que escolhe o build pela condição `development` do exports: este alias
+// pode sair na v8. Só no `vite build`: o servidor de dev continua com os
+// avisos. O CI falha se o build de dev voltar ao bundle (ci.yml, "Guard
+// against the react-router development build in web").
+const reactRouterProd = path.join(
+  path.dirname(createRequire(import.meta.url).resolve('react-router/package.json')),
+  'dist/production',
+);
+
+export default defineConfig(({ command }) => ({
   base: '/',
   plugins: [mdx(), react()],
+  resolve: {
+    alias:
+      command === 'build'
+        ? [
+            { find: /^react-router$/, replacement: path.join(reactRouterProd, 'index.mjs') },
+            { find: /^react-router\/dom$/, replacement: path.join(reactRouterProd, 'dom-export.mjs') },
+          ]
+        : [],
+  },
   build: {
     outDir: 'dist',
     rollupOptions: {
       output: {
         manualChunks: {
           // React and React DOM (core framework)
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'react-vendor': ['react', 'react-dom', 'react-router'],
         },
       },
     },
   },
-});
+}));
