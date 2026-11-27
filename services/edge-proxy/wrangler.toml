@@ -1,7 +1,36 @@
 name = "edge-proxy"
 main = "src/index.ts"
 compatibility_date = "2024-09-01"
+
+# Every setting below is explicit on purpose: when a key is missing, wrangler 4
+# (or the Cloudflare API) picks the default, and some of those defaults changed
+# in wrangler 4. Keys and defaults: node_modules/wrangler/config-schema.json.
+
+# workers.dev is this Worker's only URL today (there are no `routes`), so it
+# stays on. Moving to a Custom Domain is a separate change.
 workers_dev = true
 
+# No per-version Preview URLs (<version>-edge-proxy.<subdomain>.workers.dev).
+# Deploys use `wrangler deploy`, nothing reads a preview, and each one would be
+# one more public URL that proxies to the BFF. The schema lists a default of
+# `false`, but it does not apply here: when the key is missing, wrangler sends
+# no value (undefined) and the API decides.
+preview_urls = false
+
+# Do not upload dist/index.js.map with the Worker (wrangler 4 does by default).
+upload_source_maps = false
+
+# No usage metrics to Cloudflare from any wrangler command run in this project
+# (dev, build, deploy). The WRANGLER_SEND_METRICS environment variable, when
+# set, still takes precedence.
+send_metrics = false
+
+# Do not send the project's dependency list (`package_dependencies`) in the
+# upload metadata.
+[dependencies_instrumentation]
+enabled = false
+
+# Placeholder: with it, /api/ answers 503 (the Worker refuses placeholder and
+# invalid hosts). The deploy sets the real host with --var.
 [vars]
 BFF_HOST = "api.example.com"

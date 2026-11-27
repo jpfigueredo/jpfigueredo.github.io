@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Workers runtime, not a browser: no DOM lib. Request, Response, fetch,
+    // ExportedHandler and the rest come from worker-configuration.d.ts,
+    // which `wrangler types` generates (typecheck script) for the
+    // compatibility_date in wrangler.toml, with the workerd that wrangler pins.
+    "lib": ["ES2022"],
+    "target": "ES2022",
+    "types": [],
+    "noEmit": true
+  },
+  "include": ["src", "worker-configuration.d.ts"]
+}
