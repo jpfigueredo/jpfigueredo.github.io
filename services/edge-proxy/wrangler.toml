@@ -37,10 +37,12 @@ enabled = false
 # This Worker proxies /api/ requests that carry `Authorization` and `Cookie`.
 # Invocation logs (one automatic log per request, with request and response
 # details) stay off: Cloudflare does not document which request fields they
-# store, so they are not trusted with credentials. Logs keep what the code
-# writes with console.*, and the code must not log request data (headers,
-# cookies, bodies, query strings). Turning invocation logs on is a separate,
-# reviewed change.
+# store, so they are not trusted with credentials. Instead, src/index.ts
+# writes one JSON line per /api/ request with an allowlist of fields: method,
+# path without the query string, status, reason and upstream_ms. Never log
+# headers, cookies, IP, user agent, query strings, bodies or error messages
+# (the tests check that marked credentials do not reach the log). Turning
+# invocation logs on is a separate, reviewed change.
 [observability]
 enabled = true
 # Keep every log (low traffic).

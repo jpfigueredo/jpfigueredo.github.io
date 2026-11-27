@@ -60,23 +60,60 @@ function apiError(status: number, message: string, extra: Record<string, string>
   );
 }
 
+// One log line per /api/ request. Allowlist: these fields are the only data
+// ever logged. Never add headers, cookies, IP, user agent, query string, body
+// or error messages (an upstream error can carry the URL and its query).
+type ApiReason = 'ok' | 'bad_method' | 'upstream_not_configured' | 'upstream_error';
+interface ApiLog {
+  method: string; // request method, or OTHER if it is not a known one
+  path: string; // URL path, without the query string
+  status: number; // status sent to the client
+  reason: ApiReason;
+  upstream_ms: number | null; // time to the BFF response headers; null if not called
+}
+const KNOWN_METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'CONNECT', 'TRACE']);
+
+function logApi(entry: ApiLog): void {
+  const line: ApiLog = {
+    method: KNOWN_METHODS.has(entry.method) ? entry.method : 'OTHER',
+    path: entry.path,
+    status: entry.status,
+    reason: entry.reason,
+    upstream_ms: entry.upstream_ms
+  };
+  console.log(JSON.stringify(line));
+}
+
 export default {
   async fetch(request: Request, env: { BFF_HOST?: string }): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname.startsWith('/api/')) {
+      const log = { method: request.method, path: url.pathname };
       if (!PROXY_METHODS.includes(request.method)) {
+        logApi({ ...log, status: 405, reason: 'bad_method', upstream_ms: null });
         return apiError(405, 'method not allowed', { Allow: PROXY_METHODS.join(', ') });
       }
       // Fail closed: no valid BFF_HOST, no request leaves the Worker.
       const origin = bffOrigin(env.BFF_HOST);
       if (origin === null) {
+        logApi({ ...log, status: 503, reason: 'upstream_not_configured', upstream_ms: null });
         return apiError(503, 'upstream not configured');
       }
       const target = new URL(url.pathname + url.search, origin);
-      const proxied = await fetch(new Request(target.toString(), request));
+      const started = Date.now();
+      let proxied: Response;
+      try {
+        proxied = await fetch(new Request(target.toString(), request));
+      } catch {
+        // fetch() rejected: the BFF could not be reached.
+        logApi({ ...log, status: 502, reason: 'upstream_error', upstream_ms: Date.now() - started });
+        return apiError(502, 'bad gateway');
+      }
+      const upstreamMs = Date.now() - started;
       const resp = new Response(proxied.body, proxied);
       for (const [name, value] of Object.entries(CORS_HEADERS)) resp.headers.set(name, value);
+      logApi({ ...log, status: resp.status, reason: 'ok', upstream_ms: upstreamMs });
       return withSecurityHeaders(resp);
     }
 

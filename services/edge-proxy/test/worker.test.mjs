@@ -87,6 +87,30 @@ async function fakeBff(req) {
   });
 }
 
+// Lines the Worker wrote with console.* (Miniflare structured logs), for
+// every instance; reset in `call`, like `upstream`.
+const logs = [];
+// The one JSON log line of an /api/ request. Logs reach Node from workerd's
+// stdout after the response, so wait for it.
+async function apiLog() {
+  const deadline = Date.now() + 5000;
+  for (;;) {
+    const line = logs.find((l) => l.message.startsWith('{'));
+    if (line) return JSON.parse(line.message);
+    assert.ok(Date.now() < deadline, `no /api/ log line; got ${JSON.stringify(logs)}`);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+// Lets late log lines arrive before a test greps all of them.
+const settleLogs = () => new Promise((resolve) => setTimeout(resolve, 200));
+const API_LOG_FIELDS = ['method', 'path', 'status', 'reason', 'upstream_ms'];
+function assertApiLog(log, expected) {
+  assert.deepEqual(Object.keys(log), API_LOG_FIELDS);
+  for (const [name, value] of Object.entries(expected)) assert.equal(log[name], value, `log field ${name}`);
+}
+// Marked values for the credential test: none may reach a log.
+const MARK = 'SECRET';
+
 // BFF that is down: it drops every connection, so the Worker's fetch()
 // rejects (a `fetcher` that throws would still answer with a 500 response).
 function droppingBff(req) {
@@ -100,6 +124,7 @@ const instances = [];
 
 function startWorker(bffHost, outboundService = { type: 'fetcher', handler: fakeBff }) {
   const mf = new Miniflare({
+    handleStructuredLogs: (log) => logs.push(log),
     workers: [
       {
         config: {
@@ -119,6 +144,7 @@ function startWorker(bffHost, outboundService = { type: 'fetcher', handler: fake
 // One request; returns the response (body read) and what reached the BFF.
 async function call(mf, path, init = {}) {
   upstream.length = 0;
+  logs.length = 0;
   const res = await mf.dispatchFetch(`http://edge.test${path}`, init);
   const text = await res.text();
   return { res, text, upstream: [...upstream] };
@@ -149,6 +175,9 @@ describe('outside /api/ (BFF_HOST set)', () => {
   test('GET / answers locally with the security headers', async () => {
     const { res, text, upstream } = await call(mf, '/');
     assert.equal(res.status, 200);
+    // Only /api/ requests are logged (nothing is waited for here, so this
+    // only catches a log that arrives with the response).
+    assert.deepEqual(logs, []);
     assert.equal(text, 'edge-proxy ok');
     assertHeaders(res, SECURITY_HEADERS);
     assert.equal(res.headers.get('access-control-allow-origin'), null);
@@ -206,6 +235,33 @@ describe('proxy to the BFF (BFF_HOST set)', () => {
     assert.equal(upstream[0].url, 'https://bff.test/api/echo?q=1&r=%C3%A7');
     assert.equal(res.headers.get('x-upstream'), 'bff');
     assert.equal(res.headers.get('content-type'), 'application/json');
+  });
+
+  test('logs method, path without query, status, reason and upstream time, and no credentials', async () => {
+    const { res } = await call(mf, `/api/echo?token=${MARK}456`, {
+      method: 'POST',
+      body: `${MARK}-BODY`,
+      headers: {
+        Authorization: `Bearer ${MARK}123`,
+        Cookie: `session=${MARK}789`,
+        'User-Agent': `${MARK}-UA`,
+        'X-Forwarded-For': '203.0.113.7',
+      },
+    });
+    assert.equal(res.status, 200);
+    const log = await apiLog();
+    assertApiLog(log, { method: 'POST', path: '/api/echo', status: 200, reason: 'ok' });
+    assert.equal(typeof log.upstream_ms, 'number');
+    assert.ok(log.upstream_ms >= 0);
+    await settleLogs();
+    const all = JSON.stringify(logs);
+    assert.ok(!all.includes(MARK), `a marked value reached the log: ${all}`);
+    assert.ok(!all.includes('203.0.113.7'), `the client IP reached the log: ${all}`);
+  });
+
+  test('a BFF error status is logged as the final status', async () => {
+    await call(mf, '/api/err');
+    assertApiLog(await apiLog(), { method: 'GET', path: '/api/err', status: 503, reason: 'ok' });
   });
 
   test('proxied response gets the CORS and security headers', async () => {
@@ -281,6 +337,7 @@ describe('proxy to the BFF (BFF_HOST set)', () => {
       assert.equal(res.headers.get('allow'), 'GET, POST, HEAD, OPTIONS');
       assertHeaders(res, { ...CORS_HEADERS, ...SECURITY_HEADERS });
       assert.deepEqual(upstream, []);
+      assertApiLog(await apiLog(), { method, path: '/api/echo', status: 405, reason: 'bad_method', upstream_ms: null });
     });
   }
 
@@ -293,14 +350,25 @@ describe('proxy to the BFF (BFF_HOST set)', () => {
 });
 
 describe('BFF down', () => {
-  test('a dropped connection gives a 500, not a proxied answer', async () => {
+  test('a dropped connection gives a 502 with reason upstream_error', async () => {
     const mf = startWorker('bff.test', { type: 'node-handler', handler: droppingBff });
-    const { res, upstream } = await call(mf, '/api/echo', { method: 'POST', body: 'x' });
+    const { res, text, upstream } = await call(mf, `/api/echo?token=${MARK}456`, {
+      method: 'POST',
+      body: 'x',
+      headers: { Authorization: `Bearer ${MARK}123`, Cookie: `session=${MARK}789` },
+    });
     assert.ok(upstream.length >= 1, 'the Worker tried the BFF');
-    assert.equal(upstream[0].url, '(dropped) bff.test/api/echo');
-    assert.equal(res.status, 500);
-    // The Worker threw before building its response: no CORS header.
-    assert.equal(res.headers.get('access-control-allow-origin'), null);
+    assert.equal(upstream[0].url, `(dropped) bff.test/api/echo?token=${MARK}456`);
+    assert.equal(res.status, 502);
+    assert.equal(text, 'bad gateway');
+    assertHeaders(res, { ...CORS_HEADERS, ...SECURITY_HEADERS });
+    const log = await apiLog();
+    assertApiLog(log, { method: 'POST', path: '/api/echo', status: 502, reason: 'upstream_error' });
+    assert.equal(typeof log.upstream_ms, 'number');
+    // The error message (it can hold the upstream URL and query) is not logged.
+    await settleLogs();
+    const all = JSON.stringify(logs);
+    assert.ok(!all.includes(MARK), `a marked value reached the log: ${all}`);
   });
 });
 
@@ -337,6 +405,13 @@ for (const [label, bffHost] of [
       assert.equal(text, 'upstream not configured');
       assertHeaders(res, { ...CORS_HEADERS, ...SECURITY_HEADERS });
       assert.deepEqual(upstream, []);
+      assertApiLog(await apiLog(), {
+        method: 'GET',
+        path: '/api/echo',
+        status: 503,
+        reason: 'upstream_not_configured',
+        upstream_ms: null,
+      });
     });
   });
 }
