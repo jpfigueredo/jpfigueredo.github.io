@@ -4,7 +4,14 @@
 # environment variable takes precedence over [env] (no `force`), so set it
 # through scripts/fetch-swagger-ui.sh, which checks the zip's SHA-256:
 #   bash scripts/fetch-swagger-ui.sh target/swagger-ui cargo build
-# (the Makefile and package.json scripts already do). The Dockerfile and CI
-# (rust-checks) set it from the same script.
+# The Makefile and package.json scripts already do; the Dockerfile and CI
+# (rust-checks) set the variable explicitly from the same script.
+#
+# Limit: cargo reads this file only when it runs from inside
+# services/rust-api (it looks in the current directory and its parents, not
+# next to the manifest). `cargo build --manifest-path
+# services/rust-api/Cargo.toml` from the repository root does not see it and
+# falls back to the unchecked download. Run cargo from inside
+# services/rust-api.
 [env]
 SWAGGER_UI_DOWNLOAD_URL = "unset: run scripts/fetch-swagger-ui.sh and export the SWAGGER_UI_DOWNLOAD_URL it prints"
