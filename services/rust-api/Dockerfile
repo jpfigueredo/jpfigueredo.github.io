@@ -12,9 +12,10 @@
 #     own step and then built offline;
 #   - one other download: the Swagger UI zip that utoipa-swagger-ui embeds.
 #     Its own stage (swagger-ui) fetches it with scripts/fetch-swagger-ui.sh,
-#     which pins the version and checks the SHA-256 (sha256sum -c); the
-#     builder gets only the checked file, through SWAGGER_UI_DOWNLOAD_URL
-#     (file://), so the crate's build script does not use the network;
+#     which pins the version and checks the SHA-256 (sha256sum -c). The
+#     builder copies only the zip, checks the hash again with the same script
+#     and passes it through SWAGGER_UI_DOWNLOAD_URL (file://), so the crate's
+#     build script does not use the network;
 #   - no BuildKit-only syntax, so any builder can run it;
 #   - runtime image: the binary, the CA bundle and a non-root user. No
 #     compiler, no package manager run, no curl.
@@ -83,10 +84,19 @@ COPY Cargo.toml Cargo.lock ./
 # its checksum there). Compiles nothing and runs no build script.
 RUN cargo fetch --locked
 
-# The checked Swagger UI zip. utoipa-swagger-ui's build script copies it from
-# this file:// URL instead of downloading it.
+# The Swagger UI zip from the swagger-ui stage, checked again here: that
+# stage installed unpinned packages as root, so this stage (pinned rust image)
+# does not take its word for it. With the zip present and its hash matching,
+# the script only runs sha256sum -c; this image has no curl, so a mismatch
+# fails the build instead of downloading.
+COPY scripts/fetch-swagger-ui.sh /opt/swagger-ui/fetch-swagger-ui.sh
+
 COPY --from=swagger-ui /swagger-ui/swagger-ui.zip /opt/swagger-ui/swagger-ui.zip
 
+RUN bash /opt/swagger-ui/fetch-swagger-ui.sh /opt/swagger-ui
+
+# utoipa-swagger-ui's build script copies the zip from this file:// URL
+# instead of downloading it.
 ENV SWAGGER_UI_DOWNLOAD_URL=file:///opt/swagger-ui/swagger-ui.zip
 
 COPY src ./src
