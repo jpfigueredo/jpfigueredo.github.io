@@ -66,17 +66,22 @@ function apiError(status: number, message: string, extra: Record<string, string>
 type ApiReason = 'ok' | 'bad_method' | 'upstream_not_configured' | 'upstream_error';
 interface ApiLog {
   method: string; // request method, or OTHER if it is not a known one
-  path: string; // URL path, without the query string
+  path: string; // URL path; logged only if it is in API_ROUTES
   status: number; // status sent to the client
   reason: ApiReason;
   upstream_ms: number | null; // time to the BFF response headers; null if not called
 }
+// BFF routes logged by name. Any other /api/ path is logged as API_OTHER, so
+// no attacker-chosen path text reaches the log. Update this list when the BFF
+// gets a new route (services/bff-api).
+const API_ROUTES = new Set(['/api/health', '/api/echo', '/api/kafka-viz/state']);
+const API_OTHER = '/api/:other';
 const KNOWN_METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'CONNECT', 'TRACE']);
 
 function logApi(entry: ApiLog): void {
   const line: ApiLog = {
     method: KNOWN_METHODS.has(entry.method) ? entry.method : 'OTHER',
-    path: entry.path,
+    path: API_ROUTES.has(entry.path) ? entry.path : API_OTHER,
     status: entry.status,
     reason: entry.reason,
     upstream_ms: entry.upstream_ms

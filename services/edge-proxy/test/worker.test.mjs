@@ -261,8 +261,24 @@ describe('proxy to the BFF (BFF_HOST set)', () => {
 
   test('a BFF error status is logged as the final status', async () => {
     await call(mf, '/api/err');
-    assertApiLog(await apiLog(), { method: 'GET', path: '/api/err', status: 503, reason: 'ok' });
+    assertApiLog(await apiLog(), { method: 'GET', path: '/api/:other', status: 503, reason: 'ok' });
   });
+
+  test('a path outside the BFF routes is logged as /api/:other', async () => {
+    const { res } = await call(mf, `/api/x/${MARK}999/y`);
+    assert.equal(res.status, 200);
+    assertApiLog(await apiLog(), { method: 'GET', path: '/api/:other', status: 200, reason: 'ok' });
+    await settleLogs();
+    const all = JSON.stringify(logs);
+    assert.ok(!all.includes(MARK), `a marked value reached the log: ${all}`);
+  });
+
+  for (const route of ['/api/health', '/api/echo', '/api/kafka-viz/state']) {
+    test(`the BFF route ${route} is logged by name`, async () => {
+      await call(mf, route);
+      assertApiLog(await apiLog(), { method: 'GET', path: route, status: 200, reason: 'ok' });
+    });
+  }
 
   test('proxied response gets the CORS and security headers', async () => {
     const { res } = await call(mf, '/api/echo');
