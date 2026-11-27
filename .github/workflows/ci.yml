@@ -649,6 +649,17 @@ jobs:
           cargo --version
           rustc --version | grep -q "^rustc $RUSTUP_TOOLCHAIN "
 
+      - name: Swagger UI zip (pinned version and SHA-256)
+        id: swagger-ui
+        if: ${{ steps.changes.outputs.rust == 'true' }}
+        # utoipa-swagger-ui's build script embeds the Swagger UI release zip.
+        # Without SWAGGER_UI_DOWNLOAD_URL it downloads it from GitHub with no
+        # checksum (services/rust-api/.cargo/config.toml makes that case fail
+        # instead). This step downloads it with the script the Dockerfile
+        # uses, which fails unless the SHA-256 matches the one it pins; clippy
+        # and test below point SWAGGER_UI_DOWNLOAD_URL at the checked file.
+        run: bash services/rust-api/scripts/fetch-swagger-ui.sh "$RUNNER_TEMP/swagger-ui"
+
       # No cargo cache on purpose (same reason as node-checks; a cache of
       # target/ or ~/.cargo written by PR code is a poisoning vector), so each
       # run compiles from scratch.
@@ -667,14 +678,18 @@ jobs:
         run: cargo fmt --check
 
       - name: cargo clippy
-        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' && steps.swagger-ui.outcome == 'success' }}
         working-directory: services/rust-api
+        env:
+          SWAGGER_UI_DOWNLOAD_URL: file://${{ runner.temp }}/swagger-ui/swagger-ui.zip
         run: cargo clippy --locked -- -D warnings
 
       - name: cargo test
         id: cargo-test
-        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' && steps.swagger-ui.outcome == 'success' }}
         working-directory: services/rust-api
+        env:
+          SWAGGER_UI_DOWNLOAD_URL: file://${{ runner.temp }}/swagger-ui/swagger-ui.zip
         run: cargo test --locked 2>&1 | tee "$RUNNER_TEMP/cargo-test.txt"
 
       - name: Guard against an empty or skipped Rust test suite
@@ -697,12 +712,14 @@ jobs:
           docker build --progress=plain --tag rust-api:ci .
           docker image inspect rust-api:ci --format 'image {{.Id}}, user {{.Config.User}}, healthcheck {{json .Config.Healthcheck.Test}}'
 
-      - name: Smoke test the image (HEALTHCHECK and /health)
+      - name: Smoke test the image (HEALTHCHECK, /health, OpenAPI, Swagger UI)
         if: ${{ !cancelled() && steps.docker-build.outcome == 'success' }}
         # Runs the image as built (no extra flags), waits for its own
         # HEALTHCHECK to report healthy, checks that the process runs as uid
-        # 10001 (the USER in the Dockerfile) and that /health answers
-        # "status":"ok" from the host. Port bound to 127.0.0.1 only.
+        # 10001 (the USER in the Dockerfile), that /health answers
+        # "status":"ok" from the host, that /api-docs/openapi.json is an
+        # OpenAPI document and that /swagger-ui/ serves the embedded UI.
+        # Port bound to 127.0.0.1 only.
         run: |
           docker run --detach --name rust-api-ci --publish 127.0.0.1:8080:8080 rust-api:ci
           health=starting
@@ -730,6 +747,18 @@ jobs:
           echo "GET /health: $body"
           if ! grep -q '"status":"ok"' <<<"$body"; then
             echo "::error title=docker smoke test::/health did not return \"status\":\"ok\"."
+            exit 1
+          fi
+          spec="$(curl --fail --silent --show-error --max-time 10 http://127.0.0.1:8080/api-docs/openapi.json)"
+          echo "GET /api-docs/openapi.json: $(wc -c <<<"$spec") bytes, $(grep -o '"openapi":"[^"]*"' <<<"$spec")"
+          if ! grep -q '"openapi":"3\.' <<<"$spec"; then
+            echo "::error title=docker smoke test::/api-docs/openapi.json is not an OpenAPI 3 document."
+            exit 1
+          fi
+          ui="$(curl --fail --silent --show-error --max-time 10 http://127.0.0.1:8080/swagger-ui/)"
+          echo "GET /swagger-ui/: $(wc -c <<<"$ui") bytes"
+          if ! grep -q 'swagger-ui-bundle.js' <<<"$ui"; then
+            echo "::error title=docker smoke test::/swagger-ui/ does not serve the Swagger UI page."
             exit 1
           fi
 
