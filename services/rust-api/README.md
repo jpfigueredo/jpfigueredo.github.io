@@ -21,8 +21,20 @@ This is a template project for building high-performance REST APIs with Rust. It
 
 ### Development
 
+The Swagger UI page is embedded at build time from the Swagger UI release
+zip. `scripts/fetch-swagger-ui.sh` downloads it once into
+`target/swagger-ui/`, checks its SHA-256 and runs the given command with
+`SWAGGER_UI_DOWNLOAD_URL` pointing at it. A plain `cargo build` without that
+variable stops with an error (`.cargo/config.toml`) instead of downloading an
+unchecked zip. The Makefile and the `package.json` scripts already go through
+the script.
+
 ```bash
 # Run the server
+bash scripts/fetch-swagger-ui.sh target/swagger-ui cargo run
+
+# Or export the variable once per shell, then use cargo as usual
+eval "export $(bash scripts/fetch-swagger-ui.sh target/swagger-ui | tail -n 1)"
 cargo run
 
 # Run with hot reload (requires cargo-watch)
@@ -101,6 +113,8 @@ rust-api/
 ├── Cargo.toml           # Dependencies and metadata
 ├── Dockerfile           # Container image
 ├── Makefile             # Convenience commands
+├── scripts/
+│   └── fetch-swagger-ui.sh  # Pinned, checksummed Swagger UI zip for the build
 ├── CODE_GUIDE.md        # Detailed code explanation
 └── README.md            # This file
 ```

@@ -1,0 +1,10 @@
+# Fail-closed default for utoipa-swagger-ui's build script. Without
+# SWAGGER_UI_DOWNLOAD_URL it downloads the Swagger UI zip from GitHub with no
+# checksum; this value makes it stop with an error instead. A real
+# environment variable takes precedence over [env] (no `force`), so set it
+# through scripts/fetch-swagger-ui.sh, which checks the zip's SHA-256:
+#   bash scripts/fetch-swagger-ui.sh target/swagger-ui cargo build
+# (the Makefile and package.json scripts already do). The Dockerfile and CI
+# (rust-checks) set it from the same script.
+[env]
+SWAGGER_UI_DOWNLOAD_URL = "unset: run scripts/fetch-swagger-ui.sh and export the SWAGGER_UI_DOWNLOAD_URL it prints"

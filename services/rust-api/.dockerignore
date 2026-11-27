@@ -5,3 +5,4 @@
 !Cargo.toml
 !Cargo.lock
 !src/
+!scripts/fetch-swagger-ui.sh
