@@ -24,17 +24,32 @@ This is a template project for building high-performance REST APIs with Rust. It
 The Swagger UI page is embedded at build time from the Swagger UI release
 zip. `scripts/fetch-swagger-ui.sh` downloads it once into
 `target/swagger-ui/`, checks its SHA-256 and runs the given command with
-`SWAGGER_UI_DOWNLOAD_URL` pointing at it. A plain `cargo build` without that
-variable stops with an error (`.cargo/config.toml`) instead of downloading an
-unchecked zip. The Makefile and the `package.json` scripts already go through
-the script.
+`SWAGGER_UI_DOWNLOAD_URL` pointing at it (`file://`, so the crate's build
+script copies the file instead of downloading it).
+
+- Run cargo from inside `services/rust-api`. There, `.cargo/config.toml`
+  makes a build without the variable stop with an error instead of
+  downloading an unchecked zip. Cargo does not read that file for
+  `cargo build --manifest-path services/rust-api/Cargo.toml` from the
+  repository root, and that build falls back to the unchecked download.
+- CI, the Dockerfile, the Makefile and the `package.json` scripts pass the
+  variable explicitly; they do not depend on `.cargo/config.toml`.
+- What is guaranteed: the embedded UI is the checked zip as long as
+  `SWAGGER_UI_OVERWRITE_FOLDER` is unset (the build script copies that
+  folder's files over the UI). Nothing in this repository sets it.
+- After changing the zip (a new Swagger UI version in the script), run
+  `cargo clean -p utoipa-swagger-ui`: its build script does not rerun when
+  only the zip changes, so an incremental build keeps the old UI.
 
 ```bash
+cd services/rust-api
+
 # Run the server
 bash scripts/fetch-swagger-ui.sh target/swagger-ui cargo run
 
-# Or export the variable once per shell, then use cargo as usual
-eval "export $(bash scripts/fetch-swagger-ui.sh target/swagger-ui | tail -n 1)"
+# Or set the variable once per shell, then use cargo as usual
+bash scripts/fetch-swagger-ui.sh target/swagger-ui
+export SWAGGER_UI_DOWNLOAD_URL="file://$PWD/target/swagger-ui/swagger-ui.zip"
 cargo run
 
 # Run with hot reload (requires cargo-watch)
