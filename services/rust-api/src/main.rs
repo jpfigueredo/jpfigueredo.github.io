@@ -259,7 +259,7 @@ fn app() -> Router {
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .route("/health", get(health_check))
         .route("/api/timeline", get(get_timeline))
-        .route("/api/v1/items/:id", get(get_item))
+        .route("/api/v1/items/{id}", get(get_item))
         .route("/api/v1/items", post(create_item))
         .layer(CorsLayer::permissive())
 }
