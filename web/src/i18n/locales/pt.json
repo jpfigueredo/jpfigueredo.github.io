@@ -94,19 +94,5 @@
     "exitFullscreen": "Sair da Tela Cheia",
     "enterFullscreen": "Tela Cheia",
     "email": "Email"
-  },
-  "timeline": {
-    "search": {
-      "placeholder": "Buscar (ex.: algoritmos, OOP, Turing)",
-      "highlight": "Destacar",
-      "filter": "Filtrar"
-    },
-    "controls": {
-      "past": "← Passado",
-      "future": "Futuro →",
-      "constellations": "constelações",
-      "spacing": "espaçamento",
-      "year": "ano"
-    }
   }
 }

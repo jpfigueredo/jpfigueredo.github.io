@@ -94,19 +94,5 @@
     "exitFullscreen": "Exit Fullscreen",
     "enterFullscreen": "Fullscreen",
     "email": "Email"
-  },
-  "timeline": {
-    "search": {
-      "placeholder": "Search (e.g.: algorithms, OOP, Turing)",
-      "highlight": "Highlight",
-      "filter": "Filter"
-    },
-    "controls": {
-      "past": "← Past",
-      "future": "Future →",
-      "constellations": "constellations",
-      "spacing": "spacing",
-      "year": "year"
-    }
   }
 }
