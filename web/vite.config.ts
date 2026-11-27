@@ -11,7 +11,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           // React and React DOM (core framework)
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'react-vendor': ['react', 'react-dom', 'react-router'],
         },
       },
     },
