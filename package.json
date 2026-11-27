@@ -28,8 +28,7 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "verify:links": "node scripts/verify-sources.mjs",
-    "ci:verify:links": "node scripts/verify-sources.mjs --ci",
-    "generate:node": "node scripts/generate-node.mjs"
+    "ci:verify:links": "node scripts/verify-sources.mjs --ci"
   },
   "devDependencies": {
     "turbo": "^2.11.10"
