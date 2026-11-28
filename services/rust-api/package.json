@@ -3,13 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "cargo watch -x run",
-    "build": "cargo build --release",
-    "start": "cargo run --release",
-    "test": "cargo test",
-    "lint": "cargo clippy -- -D warnings",
+    "dev": "bash scripts/fetch-swagger-ui.sh target/swagger-ui cargo watch -x run",
+    "build": "bash scripts/fetch-swagger-ui.sh target/swagger-ui cargo build --release",
+    "start": "bash scripts/fetch-swagger-ui.sh target/swagger-ui cargo run --release",
+    "test": "bash scripts/fetch-swagger-ui.sh target/swagger-ui cargo test",
+    "lint": "bash scripts/fetch-swagger-ui.sh target/swagger-ui cargo clippy -- -D warnings",
     "fmt": "cargo fmt",
-    "check": "cargo check"
+    "check": "bash scripts/fetch-swagger-ui.sh target/swagger-ui cargo check"
   }
 }
 

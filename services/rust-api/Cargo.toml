@@ -14,9 +14,9 @@ path = "src/main.rs"
 
 [dependencies]
 # Web framework
-axum = { version = "0.7", features = ["macros", "multipart"] }
+axum = { version = "0.8", features = ["macros", "multipart"] }
 tokio = { version = "1", features = ["full"] }
-tower-http = { version = "0.5", features = ["cors", "trace"] }
+tower-http = { version = "0.7", features = ["cors", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
@@ -25,8 +25,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # OpenAPI/Swagger
-utoipa = { version = "4.2", features = ["axum_extras", "chrono"] }
-utoipa-swagger-ui = { version = "6.0", features = ["axum"] }
+utoipa = { version = "6.0", features = ["axum_extras", "chrono"] }
+utoipa-swagger-ui = { version = "10.0", features = ["axum"] }
 
 # Error handling
 anyhow = "1.0"
@@ -38,6 +38,6 @@ uuid = { version = "1.6", features = ["v4", "serde"] }
 
 [dev-dependencies]
 # Route tests drive the Router in-process with tower::ServiceExt::oneshot
-# (no socket, no network). Same tower major as axum 0.7 uses.
+# (no socket, no network). Same tower major as axum 0.8 uses.
 tower = { version = "0.5", features = ["util"] }
 

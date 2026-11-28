@@ -10,9 +10,12 @@
 #     release (trixie), so the binary links against the same glibc;
 #   - dependencies come only from Cargo.lock (--locked), downloaded in their
 #     own step and then built offline;
-#   - nothing else is downloaded during the build. utoipa-swagger-ui 6.0.0
-#     ships the Swagger UI zip inside the crate, so it is covered by the
-#     crate checksum in Cargo.lock; its build script does not use the network;
+#   - one other download: the Swagger UI zip that utoipa-swagger-ui embeds.
+#     Its own stage (swagger-ui) fetches it with scripts/fetch-swagger-ui.sh,
+#     which pins the version and checks the SHA-256 (sha256sum -c). The
+#     builder copies only the zip, checks the hash again with the same script
+#     and passes it through SWAGGER_UI_DOWNLOAD_URL (file://), so the crate's
+#     build script does not use the network;
 #   - no BuildKit-only syntax, so any builder can run it;
 #   - runtime image: the binary, the CA bundle and a non-root user. No
 #     compiler, no package manager run, no curl.
@@ -24,6 +27,28 @@
 #   curl -fsS -o /dev/null -D - -H "Authorization: Bearer ${token}" \
 #     -H 'Accept: application/vnd.oci.image.index.v1+json' \
 #     "https://registry-1.docker.io/v2/${repo}/manifests/${tag}" | grep -i '^docker-content-digest'
+
+# ------------------------------------------------------------- swagger-ui ---
+# debian:trixie-slim, the same digest as the runtime stage below. Only this
+# stage has curl; nothing from it reaches the builder except the checked zip.
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS swagger-ui
+
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+
+# curl and the CA bundle from Debian's signed repository (apt checks every
+# package against the signed index). The zip itself is checked by hash below.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN dpkg-query --show --showformat='${Package} ${Version}\n' ca-certificates curl
+
+WORKDIR /swagger-ui
+
+COPY scripts/fetch-swagger-ui.sh ./fetch-swagger-ui.sh
+
+# Downloads the pinned Swagger UI release and fails unless its SHA-256 matches.
+RUN bash fetch-swagger-ui.sh /swagger-ui
 
 # ---------------------------------------------------------------- builder ---
 # rust:1.99.0-slim-trixie (multi-arch index, read 2026-11-15)
@@ -58,6 +83,21 @@ COPY Cargo.toml Cargo.lock ./
 # Download every crate pinned in Cargo.lock (cargo checks each .crate against
 # its checksum there). Compiles nothing and runs no build script.
 RUN cargo fetch --locked
+
+# The Swagger UI zip from the swagger-ui stage, checked again here: that
+# stage installed unpinned packages as root, so this stage (pinned rust image)
+# does not take its word for it. With the zip present and its hash matching,
+# the script only runs sha256sum -c; this image has no curl, so a mismatch
+# fails the build instead of downloading.
+COPY scripts/fetch-swagger-ui.sh /opt/swagger-ui/fetch-swagger-ui.sh
+
+COPY --from=swagger-ui /swagger-ui/swagger-ui.zip /opt/swagger-ui/swagger-ui.zip
+
+RUN bash /opt/swagger-ui/fetch-swagger-ui.sh /opt/swagger-ui
+
+# utoipa-swagger-ui's build script copies the zip from this file:// URL
+# instead of downloading it.
+ENV SWAGGER_UI_DOWNLOAD_URL=file:///opt/swagger-ui/swagger-ui.zip
 
 COPY src ./src
 

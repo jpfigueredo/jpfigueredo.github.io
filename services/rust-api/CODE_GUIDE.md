@@ -169,7 +169,7 @@ async fn main() {
     let app = Router::new()
         .merge(SwaggerUi::new("/swagger-ui")...)
         .route("/health", get(health_check))
-        .route("/api/v1/items/:id", get(get_item))
+        .route("/api/v1/items/{id}", get(get_item)) // axum 0.8: {id}, não :id
         .route("/api/v1/items", post(create_item))
         .layer(CorsLayer::permissive());
     

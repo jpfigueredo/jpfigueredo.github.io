@@ -6,8 +6,13 @@
 
 ```bash
 cd services/rust-api
-cargo run
+bash scripts/fetch-swagger-ui.sh target/swagger-ui cargo run
+# ou: make dev
 ```
+
+O script baixa o zip do Swagger UI uma vez, confere o SHA-256 e roda o
+comando com `SWAGGER_UI_DOWNLOAD_URL` apontando para ele. `cargo run` direto,
+sem essa variável, para com erro (veja o README).
 
 O servidor iniciará em: `http://localhost:8080`
 

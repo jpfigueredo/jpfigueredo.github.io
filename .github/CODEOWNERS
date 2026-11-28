@@ -6,3 +6,9 @@
 /security/  @jpfigueredo
 # The Node version CI runs every step with, the dependency gates included.
 /.nvmrc     @jpfigueredo
+# What decides which Swagger UI the rust-api build embeds and whether that
+# build may download it: the pinned hash, the fail-closed cargo default and
+# the Dockerfile that runs both.
+/services/rust-api/scripts/     @jpfigueredo
+/services/rust-api/.cargo/      @jpfigueredo
+/services/rust-api/Dockerfile   @jpfigueredo
