@@ -1,6 +1,6 @@
 use axum::{
     extract::Path,
-    http::{header, HeaderValue, StatusCode},
+    http::{header, HeaderValue, Method, StatusCode},
     response::Json,
     routing::{get, post},
     Router,
@@ -8,7 +8,10 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
-use tower_http::{cors::CorsLayer, set_header::SetResponseHeaderLayer};
+use tower_http::{
+    cors::{AllowOrigin, CorsLayer},
+    set_header::SetResponseHeaderLayer,
+};
 use tracing::{info, Level};
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
@@ -261,6 +264,13 @@ async fn create_item(
     Ok(Json(item))
 }
 
+/// Browser origins allowed to read this API's responses cross-origin. Exact
+/// match on scheme, host and port; any other origin gets no
+/// `Access-Control-Allow-Origin`. No page calls the API from a browser today:
+/// this is the GitHub Pages site, the one front end that would. Change it in
+/// a PR, not through the environment.
+const CORS_ALLOWED_ORIGINS: [&str; 1] = ["https://jpfigueredo.github.io"];
+
 /// CSP for everything except the Swagger UI: JSON and errors load nothing
 /// and must not be framed.
 const API_CSP: &str = "default-src 'none'; frame-ancestors 'none'";
@@ -284,6 +294,17 @@ const SWAGGER_UI_CSP: &str = "default-src 'none'; script-src 'self'; \
      img-src 'self' data:; connect-src 'self'; base-uri 'none'; \
      form-action 'self'; frame-ancestors 'none'";
 
+fn cors() -> CorsLayer {
+    // A list (not `*`) makes tower-http send `Vary: Origin` on every
+    // response, so a cache never serves one origin's answer to another.
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::list(
+            CORS_ALLOWED_ORIGINS.map(HeaderValue::from_static),
+        ))
+        .allow_methods([Method::GET, Method::POST])
+        .allow_headers([header::CONTENT_TYPE])
+}
+
 /// Application routes. Kept apart from `main` so tests can drive the same
 /// `Router` in-process, without binding a socket.
 fn app() -> Router {
@@ -305,7 +326,7 @@ fn app() -> Router {
         .route("/api/timeline", get(get_timeline))
         .route("/api/v1/items/{id}", get(get_item))
         .route("/api/v1/items", post(create_item))
-        .layer(CorsLayer::permissive())
+        .layer(cors())
         // Outside the CORS layer, so its preflight answers get them too.
         .layer(SetResponseHeaderLayer::if_not_present(
             header::CONTENT_SECURITY_POLICY,
@@ -656,6 +677,15 @@ mod tests {
             .unwrap()
     }
 
+    fn with_origin(method: Method, uri: &str, origin: &str) -> Request<Body> {
+        Request::builder()
+            .method(method)
+            .uri(uri)
+            .header(header::ORIGIN, origin)
+            .body(Body::empty())
+            .unwrap()
+    }
+
     fn preflight(uri: &str, origin: &str) -> Request<Body> {
         Request::builder()
             .method(Method::OPTIONS)
@@ -665,6 +695,16 @@ mod tests {
             .header(header::ACCESS_CONTROL_REQUEST_HEADERS, "content-type")
             .body(Body::empty())
             .unwrap()
+    }
+
+    /// `Vary` lists `Origin` (header names are case-insensitive).
+    fn varies_on_origin(headers: &HeaderMap) -> bool {
+        headers
+            .get_all(header::VARY)
+            .iter()
+            .filter_map(|value| value.to_str().ok())
+            .flat_map(|value| value.split(','))
+            .any(|name| name.trim().eq_ignore_ascii_case("origin"))
     }
 
     #[tokio::test]
@@ -813,13 +853,81 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cors_is_permissive_for_any_origin() {
-        let request = Request::builder()
-            .uri("/health")
-            .header(header::ORIGIN, "https://example.org")
-            .body(Body::empty())
-            .unwrap();
-        let response = app().oneshot(request).await.expect("router is infallible");
-        assert_eq!(response.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*");
+    async fn cors_allowed_origin_gets_it_back_with_vary_origin() {
+        let (status, headers) = headers_of(with_origin(Method::GET, "/health", PAGES_ORIGIN)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            headers
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .and_then(|v| v.to_str().ok()),
+            Some(PAGES_ORIGIN)
+        );
+        assert!(varies_on_origin(&headers), "no Vary: Origin");
+        assert!(headers
+            .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn cors_unknown_origin_gets_no_allow_origin() {
+        for origin in [
+            "https://example.org",
+            "http://jpfigueredo.github.io",
+            "https://jpfigueredo.github.io.example.org",
+            "https://evil.jpfigueredo.github.io",
+            "https://jpfigueredo.github.io:8443",
+            "https://JPFIGUEREDO.github.io",
+            "null",
+        ] {
+            let (status, headers) = headers_of(with_origin(Method::GET, "/health", origin)).await;
+            // CORS is not access control: the request is served, but the
+            // browser does not hand the response to the calling page.
+            assert_eq!(status, StatusCode::OK, "{origin}");
+            assert!(
+                headers.get(header::ACCESS_CONTROL_ALLOW_ORIGIN).is_none(),
+                "{origin}: {:?}",
+                headers.get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            );
+            // A shared cache must not reuse this response for an allowed
+            // origin.
+            assert!(varies_on_origin(&headers), "{origin}: no Vary: Origin");
+        }
+        // Without Origin (same origin, curl): no CORS header, still Vary.
+        let (_, headers) = headers_of(request(Method::GET, "/health")).await;
+        assert!(headers.get(header::ACCESS_CONTROL_ALLOW_ORIGIN).is_none());
+        assert!(varies_on_origin(&headers), "no Vary: Origin without Origin");
+    }
+
+    #[tokio::test]
+    async fn cors_preflight_from_allowed_origin_allows_post_with_json() {
+        let (status, headers) = headers_of(preflight("/api/v1/items", PAGES_ORIGIN)).await;
+        assert!(status.is_success(), "{status}");
+        assert_eq!(
+            headers
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .and_then(|v| v.to_str().ok()),
+            Some(PAGES_ORIGIN)
+        );
+        let list = |name| {
+            headers
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default()
+                .split(',')
+                .map(|item| item.trim().to_ascii_lowercase())
+                .collect::<Vec<_>>()
+        };
+        let methods = list(header::ACCESS_CONTROL_ALLOW_METHODS);
+        assert!(methods.contains(&"post".to_string()), "{methods:?}");
+        let allowed = list(header::ACCESS_CONTROL_ALLOW_HEADERS);
+        assert!(allowed.contains(&"content-type".to_string()), "{allowed:?}");
+        assert!(varies_on_origin(&headers), "no Vary: Origin");
+    }
+
+    #[tokio::test]
+    async fn cors_preflight_from_unknown_origin_gets_no_allow_origin() {
+        let (_, headers) = headers_of(preflight("/api/v1/items", "https://example.org")).await;
+        assert!(headers.get(header::ACCESS_CONTROL_ALLOW_ORIGIN).is_none());
+        assert!(varies_on_origin(&headers), "no Vary: Origin");
     }
 }
