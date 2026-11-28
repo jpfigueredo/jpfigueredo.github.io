@@ -1,6 +1,6 @@
 use axum::{
     extract::Path,
-    http::StatusCode,
+    http::{header, HeaderValue, StatusCode},
     response::Json,
     routing::{get, post},
     Router,
@@ -8,7 +8,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
-use tower_http::cors::CorsLayer;
+use tower_http::{cors::CorsLayer, set_header::SetResponseHeaderLayer};
 use tracing::{info, Level};
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
@@ -261,16 +261,68 @@ async fn create_item(
     Ok(Json(item))
 }
 
+/// CSP for everything except the Swagger UI: JSON and errors load nothing
+/// and must not be framed.
+const API_CSP: &str = "default-src 'none'; frame-ancestors 'none'";
+
+/// CSP for the Swagger UI 5.32.6 routes. Each directive is what the page
+/// needs, checked in Chrome with no violation:
+/// - script-src 'self': index.html loads three same-origin files and has no
+///   inline script (the configuration is swagger-initializer.js);
+/// - style-src 'self' + one hash: two same-origin stylesheets, plus the one
+///   inline <style> the page creates, inside the top bar's SVG logo
+///   (swagger-ui-standalone-preset.js; the test
+///   `swagger_ui_logo_style_matches_the_csp_hash` pins its text). A hash, not
+///   'unsafe-inline': nothing else inline may style the page;
+/// - img-src 'self' data:: favicons, and swagger-ui.css draws its icons with
+///   data: URLs (SVG, PNG, JPEG);
+/// - connect-src 'self': the UI fetches /api-docs/openapi.json and "Try it
+///   out" calls this API;
+/// - form-action 'self', base-uri 'none': no form posts elsewhere, no <base>.
+const SWAGGER_UI_CSP: &str = "default-src 'none'; script-src 'self'; \
+     style-src 'self' 'sha256-RL3ie0nH+Lzz2YNqQN83mnU0J1ot4QL7b99vMdIX99w='; \
+     img-src 'self' data:; connect-src 'self'; base-uri 'none'; \
+     form-action 'self'; frame-ancestors 'none'";
+
 /// Application routes. Kept apart from `main` so tests can drive the same
 /// `Router` in-process, without binding a socket.
 fn app() -> Router {
+    // The Swagger UI routes (page, assets, spec) set their own CSP; the
+    // outer layer adds API_CSP only where none is set. `route_layer`, not
+    // `layer`: `layer` would also wrap this router's fallback, and after the
+    // merge every unknown path (404) would get the Swagger UI CSP.
+    let docs = Router::from(
+        SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()),
+    )
+    .route_layer(SetResponseHeaderLayer::overriding(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(SWAGGER_UI_CSP),
+    ));
+
     Router::new()
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        .merge(docs)
         .route("/health", get(health_check))
         .route("/api/timeline", get(get_timeline))
         .route("/api/v1/items/{id}", get(get_item))
         .route("/api/v1/items", post(create_item))
         .layer(CorsLayer::permissive())
+        // Outside the CORS layer, so its preflight answers get them too.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(API_CSP),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::REFERRER_POLICY,
+            HeaderValue::from_static("no-referrer"),
+        ))
 }
 
 #[tokio::main]
@@ -307,12 +359,13 @@ mod tests {
     use super::app;
     use axum::{
         body::{to_bytes, Body},
-        http::{header, Method, Request, StatusCode},
+        http::{header, HeaderMap, Method, Request, StatusCode},
     };
     use serde_json::Value;
     use tower::ServiceExt;
 
-    const BODY_LIMIT: usize = 1024 * 1024;
+    // Large enough for swagger-ui-bundle.js (about 1.5 MiB in 5.32.6).
+    const BODY_LIMIT: usize = 4 * 1024 * 1024;
 
     async fn send(request: Request<Body>) -> (StatusCode, Vec<u8>) {
         let response = app().oneshot(request).await.expect("router is infallible");
@@ -586,6 +639,177 @@ mod tests {
         let response = app().oneshot(request).await.expect("router is infallible");
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
         assert_eq!(response.headers()[header::LOCATION], "/swagger-ui/");
+    }
+
+    const PAGES_ORIGIN: &str = "https://jpfigueredo.github.io";
+
+    async fn headers_of(request: Request<Body>) -> (StatusCode, HeaderMap) {
+        let response = app().oneshot(request).await.expect("router is infallible");
+        (response.status(), response.headers().clone())
+    }
+
+    fn request(method: Method, uri: &str) -> Request<Body> {
+        Request::builder()
+            .method(method)
+            .uri(uri)
+            .body(Body::empty())
+            .unwrap()
+    }
+
+    fn preflight(uri: &str, origin: &str) -> Request<Body> {
+        Request::builder()
+            .method(Method::OPTIONS)
+            .uri(uri)
+            .header(header::ORIGIN, origin)
+            .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+            .header(header::ACCESS_CONTROL_REQUEST_HEADERS, "content-type")
+            .body(Body::empty())
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn every_response_has_the_security_headers() {
+        // JSON, errors from the router (404, 405, 400), the preflight that
+        // the CORS layer answers by itself, and the Swagger UI files.
+        for req in [
+            request(Method::GET, "/health"),
+            request(Method::GET, "/api/v1/items/does-not-exist"),
+            request(Method::GET, "/does-not-exist"),
+            request(Method::POST, "/health"),
+            request(Method::GET, "/api/v1/items/%FF"),
+            preflight("/api/v1/items", PAGES_ORIGIN),
+            request(Method::GET, "/api-docs/openapi.json"),
+            request(Method::GET, "/swagger-ui"),
+            request(Method::GET, "/swagger-ui/"),
+            request(Method::GET, "/swagger-ui/swagger-ui-bundle.js"),
+        ] {
+            let label = format!("{} {}", req.method(), req.uri());
+            let (_, headers) = headers_of(req).await;
+            assert_eq!(
+                headers
+                    .get(header::X_CONTENT_TYPE_OPTIONS)
+                    .and_then(|v| v.to_str().ok()),
+                Some("nosniff"),
+                "{label}"
+            );
+            assert_eq!(
+                headers
+                    .get(header::X_FRAME_OPTIONS)
+                    .and_then(|v| v.to_str().ok()),
+                Some("DENY"),
+                "{label}"
+            );
+            assert_eq!(
+                headers
+                    .get(header::REFERRER_POLICY)
+                    .and_then(|v| v.to_str().ok()),
+                Some("no-referrer"),
+                "{label}"
+            );
+            let csp: Vec<_> = headers
+                .get_all(header::CONTENT_SECURITY_POLICY)
+                .iter()
+                .map(|v| v.to_str().expect("ASCII CSP"))
+                .collect();
+            assert_eq!(csp.len(), 1, "{label}: CSP headers {csp:?}");
+            assert!(
+                csp[0].contains("frame-ancestors 'none'"),
+                "{label}: {csp:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn api_responses_get_the_deny_everything_csp() {
+        for req in [
+            request(Method::GET, "/health"),
+            request(Method::GET, "/api/timeline"),
+            request(Method::GET, "/does-not-exist"),
+            request(Method::POST, "/health"),
+        ] {
+            let label = format!("{} {}", req.method(), req.uri());
+            let (_, headers) = headers_of(req).await;
+            assert_eq!(
+                headers
+                    .get(header::CONTENT_SECURITY_POLICY)
+                    .and_then(|v| v.to_str().ok()),
+                Some("default-src 'none'; frame-ancestors 'none'"),
+                "{label}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn swagger_ui_page_gets_a_same_origin_csp_and_has_no_inline_script() {
+        let response = app()
+            .oneshot(request(Method::GET, "/swagger-ui/"))
+            .await
+            .expect("router is infallible");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_SECURITY_POLICY)
+                .and_then(|v| v.to_str().ok()),
+            Some(
+                "default-src 'none'; script-src 'self'; \
+                 style-src 'self' 'sha256-RL3ie0nH+Lzz2YNqQN83mnU0J1ot4QL7b99vMdIX99w='; \
+                 img-src 'self' data:; connect-src 'self'; base-uri 'none'; \
+                 form-action 'self'; frame-ancestors 'none'"
+            )
+        );
+        // The CSP has no 'unsafe-inline': it holds only while the page loads
+        // every script and style from a file. A Swagger UI update that adds
+        // an inline <script> or <style> fails here, not only in the browser.
+        let body = to_bytes(response.into_body(), BODY_LIMIT)
+            .await
+            .expect("response body");
+        let html = String::from_utf8(body.to_vec()).expect("UTF-8 page");
+        assert!(!html.contains("<style"), "inline <style> in the page");
+        assert!(!html.contains(" style="), "inline style attribute");
+        let scripts = html.matches("<script").count();
+        assert_eq!(scripts, 3, "unexpected number of <script> tags");
+        assert_eq!(
+            html.matches("<script src=\"./").count(),
+            scripts,
+            "a <script> without a same-origin src"
+        );
+    }
+
+    #[tokio::test]
+    async fn swagger_ui_logo_style_matches_the_csp_hash() {
+        // The only <style> the Swagger UI scripts create is the one inside
+        // the top bar's SVG logo. Its text hashes (SHA-256, base64) to the
+        // hash in the CSP:
+        //   printf '%s' '<text>' | openssl dgst -sha256 -binary | base64
+        // A Swagger UI update that changes the text, or adds another <style>,
+        // fails here: recompute the hash and update SWAGGER_UI_CSP.
+        const LOGO_STYLE: &str =
+            ".logo_small_svg__cls-2{fill:#fff}.logo_small_svg__cls-3{fill:#85ea2d}";
+        const LOGO_STYLE_HASH: &str = "'sha256-RL3ie0nH+Lzz2YNqQN83mnU0J1ot4QL7b99vMdIX99w='";
+
+        let mut style_elements = 0;
+        for file in ["swagger-ui-bundle.js", "swagger-ui-standalone-preset.js"] {
+            let (status, body) = get(&format!("/swagger-ui/{file}")).await;
+            assert_eq!(status, StatusCode::OK, "{file}");
+            let script = String::from_utf8(body).expect("UTF-8 script");
+            style_elements += script.matches("createElement(\"style\"").count();
+            if file == "swagger-ui-standalone-preset.js" {
+                assert_eq!(
+                    script
+                        .matches(&format!("createElement(\"style\",null,\"{LOGO_STYLE}\")"))
+                        .count(),
+                    1,
+                    "logo <style> text changed in {file}"
+                );
+            }
+        }
+        assert_eq!(style_elements, 1, "a new inline <style> in the Swagger UI");
+
+        let (_, headers) = headers_of(request(Method::GET, "/swagger-ui/")).await;
+        let csp = headers[header::CONTENT_SECURITY_POLICY].to_str().unwrap();
+        assert!(csp.contains(LOGO_STYLE_HASH), "{csp}");
+        assert!(!csp.contains("unsafe-inline"), "{csp}");
     }
 
     #[tokio::test]
