@@ -791,35 +791,105 @@ jobs:
             exit 1
           fi
 
-      - name: Smoke test the image's security headers (nosniff, CSP, frame)
+      - name: Smoke test the image's security headers and CORS
         if: ${{ !cancelled() && steps.smoke.outcome == 'success' }}
-        # Same container as the step above. Checks the exact value of each
-        # header on a JSON route and on the Swagger UI page, as the image
-        # serves them (services/rust-api/src/main.rs sets them). Every header
-        # is checked before the step fails, so one run shows all of them.
+        # Same container as the step above, with the job's shell (bash -e -o
+        # pipefail). Checks the headers the image serves
+        # (services/rust-api/src/main.rs sets them):
+        #   - /health and /swagger-ui/: X-Content-Type-Options,
+        #     X-Frame-Options and Referrer-Policy, exact values;
+        #   - /health: the API's Content-Security-Policy, exact value;
+        #   - /swagger-ui/: invariants of the UI's CSP, not its value (its
+        #     hash belongs to the Swagger UI version; cargo test pins it):
+        #     one header, frame-ancestors 'none', a 'sha256-' source, no
+        #     'unsafe-' keyword, and not the API's CSP;
+        #   - CORS: GET /health with Origin https://jpfigueredo.github.io gets
+        #     that origin back in Access-Control-Allow-Origin, and with
+        #     Origin https://evil.example gets none.
+        # A failed request does not stop the step: each check reports its
+        # header and the reason with ::error, every check runs, then the step
+        # exits 1 if any failed.
         run: |
           api_csp="default-src 'none'; frame-ancestors 'none'"
-          ui_csp="default-src 'none'; script-src 'self'; style-src 'self' 'sha256-RL3ie0nH+Lzz2YNqQN83mnU0J1ot4QL7b99vMdIX99w='; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+          pages_origin="https://jpfigueredo.github.io"
           failed=0
-          check() {
-            local path="$1" name="$2" expected="$3" value
-            # Every line of header <name> (none, or more than one, does not
-            # match), without the trailing CR.
-            value="$(curl --fail --silent --show-error --max-time 10 --dump-header - --output /dev/null "http://127.0.0.1:8080$path" \
-              | tr -d '\r' \
-              | awk -v name="$name" 'index(tolower($0), tolower(name) ":") == 1 { sub(/^[^:]*:[ \t]*/, ""); print }')"
-            echo "GET $path $name: $value"
-            if [ "$value" != "$expected" ]; then
-              echo "::error title=docker smoke test::GET $path: $name is '$value', expected '$expected'."
-              failed=1
+          fail() {
+            echo "::error title=docker smoke test::$1"
+            failed=1
+          }
+          # fetch <path> <header> [curl args...]: sets `values` to every line
+          # of the response header (empty when absent), `count` to their
+          # number, and `why` to the reason when the request failed (empty
+          # when it worked). Never fails itself.
+          fetch() {
+            local path="$1" name="$2" response code=0
+            shift 2
+            label="GET $path${*:+ ($*)}"
+            response="$(curl --fail --silent --show-error --max-time 10 --dump-header - --output /dev/null "$@" \
+              "http://127.0.0.1:8080$path" 2>&1)" || code=$?
+            response="$(tr -d '\r' <<<"$response")"
+            why=""
+            if [ "$code" -ne 0 ]; then
+              why="curl exit $code: $(tail -n 1 <<<"$response")"
+            fi
+            values="$(awk -v name="$name" 'index(tolower($0), tolower(name) ":") == 1 { sub(/^[^:]*:[ \t]*/, ""); print }' <<<"$response")"
+            count="$(awk -v name="$name" 'index(tolower($0), tolower(name) ":") == 1 { n++ } END { print n + 0 }' <<<"$response")"
+            echo "$label $name: ${values:-<absent>}"
+          }
+          # expect <path> <header> <value> [curl args...]: exactly one line,
+          # equal to <value>.
+          expect() {
+            local path="$1" name="$2" expected="$3"
+            shift 3
+            fetch "$path" "$name" "$@"
+            if [ -n "$why" ]; then
+              fail "$label: $name not checked, the request failed ($why)."
+            elif [ "$count" -ne 1 ] || [ "$values" != "$expected" ]; then
+              fail "$label: $name is '$values' ($count line(s)), expected '$expected'."
             fi
           }
-          check /health x-content-type-options nosniff
-          check /health x-frame-options DENY
-          check /health content-security-policy "$api_csp"
-          check /swagger-ui/ x-content-type-options nosniff
-          check /swagger-ui/ x-frame-options DENY
-          check /swagger-ui/ content-security-policy "$ui_csp"
+          # expect_absent <path> <header> [curl args...]
+          expect_absent() {
+            local path="$1" name="$2"
+            shift 2
+            fetch "$path" "$name" "$@"
+            if [ -n "$why" ]; then
+              fail "$label: $name not checked, the request failed ($why)."
+            elif [ "$count" -ne 0 ]; then
+              fail "$label: $name is '$values', expected no such header."
+            fi
+          }
+          for path in /health /swagger-ui/; do
+            expect "$path" x-content-type-options nosniff
+            expect "$path" x-frame-options DENY
+            expect "$path" referrer-policy no-referrer
+          done
+          expect /health content-security-policy "$api_csp"
+
+          fetch /swagger-ui/ content-security-policy
+          if [ -n "$why" ]; then
+            fail "$label: content-security-policy not checked, the request failed ($why)."
+          elif [ "$count" -ne 1 ]; then
+            fail "$label: $count content-security-policy lines, expected 1."
+          else
+            case "$values" in
+              *"frame-ancestors 'none'"*) ;;
+              *) fail "$label: content-security-policy has no frame-ancestors 'none'." ;;
+            esac
+            case "$values" in
+              *"'sha256-"*) ;;
+              *) fail "$label: content-security-policy has no 'sha256-' source." ;;
+            esac
+            case "$values" in
+              *unsafe-*) fail "$label: content-security-policy has an 'unsafe-' keyword." ;;
+            esac
+            if [ "$values" = "$api_csp" ]; then
+              fail "$label: content-security-policy is the API's, not the UI's."
+            fi
+          fi
+
+          expect /health access-control-allow-origin "$pages_origin" -H "Origin: $pages_origin"
+          expect_absent /health access-control-allow-origin -H "Origin: https://evil.example"
           exit "$failed"
 
       - name: Remove the smoke test container
