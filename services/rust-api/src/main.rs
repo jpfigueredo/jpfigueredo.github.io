@@ -377,7 +377,7 @@ async fn main() {
 /// .github/workflows/ci.yml in the same PR.
 #[cfg(test)]
 mod tests {
-    use super::app;
+    use super::{app, API_CSP, SWAGGER_UI_CSP};
     use axum::{
         body::{to_bytes, Body},
         http::{header, HeaderMap, Method, Request, StatusCode},
@@ -710,18 +710,30 @@ mod tests {
     #[tokio::test]
     async fn every_response_has_the_security_headers() {
         // JSON, errors from the router (404, 405, 400), the preflight that
-        // the CORS layer answers by itself, and the Swagger UI files.
-        for req in [
-            request(Method::GET, "/health"),
-            request(Method::GET, "/api/v1/items/does-not-exist"),
-            request(Method::GET, "/does-not-exist"),
-            request(Method::POST, "/health"),
-            request(Method::GET, "/api/v1/items/%FF"),
-            preflight("/api/v1/items", PAGES_ORIGIN),
-            request(Method::GET, "/api-docs/openapi.json"),
-            request(Method::GET, "/swagger-ui"),
-            request(Method::GET, "/swagger-ui/"),
-            request(Method::GET, "/swagger-ui/swagger-ui-bundle.js"),
+        // the CORS layer answers by itself, and the Swagger UI routes, each
+        // with the CSP it must get. /api-docs/openapi.json is one of the
+        // Swagger UI routes, so it gets the UI's CSP (JSON with nosniff: a
+        // browser does not run it as a page).
+        for (req, expected_csp) in [
+            (request(Method::GET, "/health"), API_CSP),
+            (
+                request(Method::GET, "/api/v1/items/does-not-exist"),
+                API_CSP,
+            ),
+            (request(Method::GET, "/does-not-exist"), API_CSP),
+            (request(Method::POST, "/health"), API_CSP),
+            (request(Method::GET, "/api/v1/items/%FF"), API_CSP),
+            (preflight("/api/v1/items", PAGES_ORIGIN), API_CSP),
+            (
+                request(Method::GET, "/api-docs/openapi.json"),
+                SWAGGER_UI_CSP,
+            ),
+            (request(Method::GET, "/swagger-ui"), SWAGGER_UI_CSP),
+            (request(Method::GET, "/swagger-ui/"), SWAGGER_UI_CSP),
+            (
+                request(Method::GET, "/swagger-ui/swagger-ui-bundle.js"),
+                SWAGGER_UI_CSP,
+            ),
         ] {
             let label = format!("{} {}", req.method(), req.uri());
             let (_, headers) = headers_of(req).await;
@@ -751,24 +763,58 @@ mod tests {
                 .iter()
                 .map(|v| v.to_str().expect("ASCII CSP"))
                 .collect();
-            assert_eq!(csp.len(), 1, "{label}: CSP headers {csp:?}");
-            assert!(
-                csp[0].contains("frame-ancestors 'none'"),
-                "{label}: {csp:?}"
-            );
+            assert_eq!(csp, [expected_csp], "{label}");
         }
     }
 
     #[tokio::test]
     async fn api_responses_get_the_deny_everything_csp() {
-        for req in [
-            request(Method::GET, "/health"),
-            request(Method::GET, "/api/timeline"),
-            request(Method::GET, "/does-not-exist"),
-            request(Method::POST, "/health"),
+        let post_items = |content_type: &str, body: Body| {
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v1/items")
+                .header(header::CONTENT_TYPE, content_type)
+                .body(body)
+                .unwrap()
+        };
+        // Over axum's default 2 MiB body limit for the Json extractor.
+        let too_large = format!(r#"{{"name":"{}"}}"#, "x".repeat(3 * 1024 * 1024));
+        for (req, status) in [
+            (request(Method::GET, "/health"), StatusCode::OK),
+            (request(Method::GET, "/api/timeline"), StatusCode::OK),
+            (
+                request(Method::GET, "/does-not-exist"),
+                StatusCode::NOT_FOUND,
+            ),
+            (
+                request(Method::POST, "/health"),
+                StatusCode::METHOD_NOT_ALLOWED,
+            ),
+            (
+                post_items("text/plain", Body::from(r#"{"name":"Widget"}"#)),
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            ),
+            (
+                post_items("application/json", Body::from(r#"{"name":"#)),
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                request(Method::GET, "/api/v1/items/%FF"),
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                post_items("application/json", Body::from(r#"{"description":"x"}"#)),
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+            (
+                post_items("application/json", Body::from(too_large)),
+                StatusCode::PAYLOAD_TOO_LARGE,
+            ),
+            (preflight("/api/v1/items", PAGES_ORIGIN), StatusCode::OK),
         ] {
             let label = format!("{} {}", req.method(), req.uri());
-            let (_, headers) = headers_of(req).await;
+            let (actual, headers) = headers_of(req).await;
+            assert_eq!(actual, status, "{label}");
             assert_eq!(
                 headers
                     .get(header::CONTENT_SECURITY_POLICY)
