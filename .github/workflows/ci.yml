@@ -621,7 +621,7 @@ jobs:
       # Minimum number of Rust tests that must pass (route tests in
       # services/rust-api/src/main.rs). Raise it when you add tests; see
       # scripts/check-cargo-tests.sh.
-      RUST_MIN_TESTS: "20"
+      RUST_MIN_TESTS: "27"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -741,6 +741,7 @@ jobs:
           docker image inspect rust-api:ci --format 'image {{.Id}}, user {{.Config.User}}, healthcheck {{json .Config.Healthcheck.Test}}'
 
       - name: Smoke test the image (HEALTHCHECK, /health, OpenAPI, Swagger UI)
+        id: smoke
         if: ${{ !cancelled() && steps.docker-build.outcome == 'success' }}
         # Runs the image as built (no extra flags), waits for its own
         # HEALTHCHECK to report healthy, checks that the process runs as uid
@@ -789,6 +790,37 @@ jobs:
             echo "::error title=docker smoke test::/swagger-ui/ does not serve the Swagger UI page."
             exit 1
           fi
+
+      - name: Smoke test the image's security headers (nosniff, CSP, frame)
+        if: ${{ !cancelled() && steps.smoke.outcome == 'success' }}
+        # Same container as the step above. Checks the exact value of each
+        # header on a JSON route and on the Swagger UI page, as the image
+        # serves them (services/rust-api/src/main.rs sets them). Every header
+        # is checked before the step fails, so one run shows all of them.
+        run: |
+          api_csp="default-src 'none'; frame-ancestors 'none'"
+          ui_csp="default-src 'none'; script-src 'self'; style-src 'self' 'sha256-RL3ie0nH+Lzz2YNqQN83mnU0J1ot4QL7b99vMdIX99w='; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+          failed=0
+          check() {
+            local path="$1" name="$2" expected="$3" value
+            # Every line of header <name> (none, or more than one, does not
+            # match), without the trailing CR.
+            value="$(curl --fail --silent --show-error --max-time 10 --dump-header - --output /dev/null "http://127.0.0.1:8080$path" \
+              | tr -d '\r' \
+              | awk -v name="$name" 'index(tolower($0), tolower(name) ":") == 1 { sub(/^[^:]*:[ \t]*/, ""); print }')"
+            echo "GET $path $name: $value"
+            if [ "$value" != "$expected" ]; then
+              echo "::error title=docker smoke test::GET $path: $name is '$value', expected '$expected'."
+              failed=1
+            fi
+          }
+          check /health x-content-type-options nosniff
+          check /health x-frame-options DENY
+          check /health content-security-policy "$api_csp"
+          check /swagger-ui/ x-content-type-options nosniff
+          check /swagger-ui/ x-frame-options DENY
+          check /swagger-ui/ content-security-policy "$ui_csp"
+          exit "$failed"
 
       - name: Remove the smoke test container
         if: ${{ always() }}
