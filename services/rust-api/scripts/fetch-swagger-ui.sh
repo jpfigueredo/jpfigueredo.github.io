@@ -37,7 +37,14 @@
 # SWAGGER_UI_DOWNLOAD_URL_DEFAULT constant of its build.rs. Then run
 # `cargo clean -p utoipa-swagger-ui` before building: its build script
 # (10.0.2) does not rerun when only the file:// zip or the variable changes,
-# so an incremental build keeps embedding the old UI.
+# so an incremental build keeps embedding the old UI. Last, run `cargo test`:
+# the Swagger UI page's CSP allows its one inline <style> (the top bar logo)
+# by hash, and if the new version changed that text, the test
+# swagger_ui_logo_style_matches_the_csp_hash fails and prints it. Recompute
+# the hash with
+#   printf '%s' "$text" | openssl dgst -sha256 -binary | base64
+# and update it in src/main.rs: SWAGGER_UI_CSP, and LOGO_STYLE and
+# LOGO_STYLE_HASH in the tests module.
 set -euo pipefail
 # `cd` below must resolve the directory it is given, not a CDPATH entry.
 unset CDPATH

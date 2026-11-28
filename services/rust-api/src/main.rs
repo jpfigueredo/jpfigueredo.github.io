@@ -281,9 +281,11 @@ const API_CSP: &str = "default-src 'none'; frame-ancestors 'none'";
 ///   inline script (the configuration is swagger-initializer.js);
 /// - style-src 'self' + one hash: two same-origin stylesheets, plus the one
 ///   inline <style> the page creates, inside the top bar's SVG logo
-///   (swagger-ui-standalone-preset.js; the test
-///   `swagger_ui_logo_style_matches_the_csp_hash` pins its text). A hash, not
-///   'unsafe-inline': nothing else inline may style the page;
+///   (swagger-ui-standalone-preset.js). The tests module keeps its text and
+///   this hash in LOGO_STYLE and LOGO_STYLE_HASH, and
+///   `swagger_ui_logo_style_matches_the_csp_hash` fails, printing the new
+///   text, when a Swagger UI update changes it. A hash, not 'unsafe-inline':
+///   nothing else inline may style the page;
 /// - img-src 'self' data:: favicons, and swagger-ui.css draws its icons with
 ///   data: URLs (SVG, PNG, JPEG);
 /// - connect-src 'self': the UI fetches /api-docs/openapi.json and "Try it
@@ -664,6 +666,15 @@ mod tests {
 
     const PAGES_ORIGIN: &str = "https://jpfigueredo.github.io";
 
+    /// The text of the only inline <style> the Swagger UI creates (inside
+    /// the top bar's SVG logo, in swagger-ui-standalone-preset.js) and its
+    /// SHA-256 in base64, as a CSP source. The hash lives in two places:
+    /// SWAGGER_UI_CSP and here. Recompute it with
+    ///   printf '%s' "$text" | openssl dgst -sha256 -binary | base64
+    const LOGO_STYLE: &str =
+        ".logo_small_svg__cls-2{fill:#fff}.logo_small_svg__cls-3{fill:#85ea2d}";
+    const LOGO_STYLE_HASH: &str = "'sha256-RL3ie0nH+Lzz2YNqQN83mnU0J1ot4QL7b99vMdIX99w='";
+
     async fn headers_of(request: Request<Body>) -> (StatusCode, HeaderMap) {
         let response = app().oneshot(request).await.expect("router is infallible");
         (response.status(), response.headers().clone())
@@ -838,10 +849,12 @@ mod tests {
                 .get(header::CONTENT_SECURITY_POLICY)
                 .and_then(|v| v.to_str().ok()),
             Some(
-                "default-src 'none'; script-src 'self'; \
-                 style-src 'self' 'sha256-RL3ie0nH+Lzz2YNqQN83mnU0J1ot4QL7b99vMdIX99w='; \
-                 img-src 'self' data:; connect-src 'self'; base-uri 'none'; \
-                 form-action 'self'; frame-ancestors 'none'"
+                format!(
+                    "default-src 'none'; script-src 'self'; style-src 'self' {LOGO_STYLE_HASH}; \
+                     img-src 'self' data:; connect-src 'self'; base-uri 'none'; \
+                     form-action 'self'; frame-ancestors 'none'"
+                )
+                .as_str()
             )
         );
         // The CSP has no 'unsafe-inline': it holds only while the page loads
@@ -864,38 +877,46 @@ mod tests {
 
     #[tokio::test]
     async fn swagger_ui_logo_style_matches_the_csp_hash() {
-        // The only <style> the Swagger UI scripts create is the one inside
-        // the top bar's SVG logo. Its text hashes (SHA-256, base64) to the
-        // hash in the CSP:
-        //   printf '%s' '<text>' | openssl dgst -sha256 -binary | base64
-        // A Swagger UI update that changes the text, or adds another <style>,
-        // fails here: recompute the hash and update SWAGGER_UI_CSP.
-        const LOGO_STYLE: &str =
-            ".logo_small_svg__cls-2{fill:#fff}.logo_small_svg__cls-3{fill:#85ea2d}";
-        const LOGO_STYLE_HASH: &str = "'sha256-RL3ie0nH+Lzz2YNqQN83mnU0J1ot4QL7b99vMdIX99w='";
-
-        let mut style_elements = 0;
+        // Every inline <style> the Swagger UI scripts create, as
+        // createElement("style", null, "<text>") in the minified bundles:
+        // today only the logo's, whose hash is in the CSP. A Swagger UI
+        // update that changes it, or adds another, fails here and prints the
+        // new text.
+        const CALL: &str = "createElement(\"style\"";
+        let mut found = Vec::new();
         for file in ["swagger-ui-bundle.js", "swagger-ui-standalone-preset.js"] {
             let (status, body) = get(&format!("/swagger-ui/{file}")).await;
             assert_eq!(status, StatusCode::OK, "{file}");
             let script = String::from_utf8(body).expect("UTF-8 script");
-            style_elements += script.matches("createElement(\"style\"").count();
-            if file == "swagger-ui-standalone-preset.js" {
-                assert_eq!(
-                    script
-                        .matches(&format!("createElement(\"style\",null,\"{LOGO_STYLE}\")"))
-                        .count(),
-                    1,
-                    "logo <style> text changed in {file}"
-                );
+            for (at, _) in script.match_indices(CALL) {
+                let rest = &script[at + CALL.len()..];
+                // The text of a literal ,null,"<text>" call; otherwise the
+                // next 80 characters, to show what the call looks like.
+                let text: String = match rest
+                    .strip_prefix(",null,\"")
+                    .and_then(|tail| tail.split('"').next())
+                {
+                    Some(text) => text.to_string(),
+                    None => rest.chars().take(80).collect(),
+                };
+                found.push(format!("{file}: {text}"));
             }
         }
-        assert_eq!(style_elements, 1, "a new inline <style> in the Swagger UI");
+        assert_eq!(
+            found,
+            [format!("swagger-ui-standalone-preset.js: {LOGO_STYLE}")],
+            "\nThe inline <style> elements of the Swagger UI changed. For each \
+             new text, compute its CSP hash with\n  \
+             printf '%s' \"$text\" | openssl dgst -sha256 -binary | base64\n\
+             and update it in the two places it lives, both in \
+             services/rust-api/src/main.rs: SWAGGER_UI_CSP, and LOGO_STYLE and \
+             LOGO_STYLE_HASH in the tests module.\n"
+        );
 
         let (_, headers) = headers_of(request(Method::GET, "/swagger-ui/")).await;
         let csp = headers[header::CONTENT_SECURITY_POLICY].to_str().unwrap();
         assert!(csp.contains(LOGO_STYLE_HASH), "{csp}");
-        assert!(!csp.contains("unsafe-inline"), "{csp}");
+        assert!(!csp.contains("unsafe-"), "{csp}");
     }
 
     #[tokio::test]
