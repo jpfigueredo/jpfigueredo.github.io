@@ -7,6 +7,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use tower_http::cors::CorsLayer;
 use tracing::{info, Level};
 use utoipa::{OpenApi, ToSchema};
@@ -198,6 +199,14 @@ async fn get_timeline() -> Json<TimelineResponse> {
     })
 }
 
+/// Current UTC time in RFC 3339, e.g. `2026-11-27T12:34:56.123456789Z`:
+/// `Z` for UTC and the fraction of a second without trailing zeros.
+fn now_rfc3339() -> String {
+    OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .expect("a UTC time with a four-digit year is valid RFC 3339")
+}
+
 /// Get item by ID
 #[utoipa::path(
     get,
@@ -219,7 +228,7 @@ async fn get_item(Path(id): Path<String>) -> Result<Json<ItemResponse>, StatusCo
             id: "example".to_string(),
             name: "Example Item".to_string(),
             description: Some("This is an example item".to_string()),
-            created_at: chrono::Utc::now().to_rfc3339(),
+            created_at: now_rfc3339(),
         }))
     } else {
         Err(StatusCode::NOT_FOUND)
@@ -246,7 +255,7 @@ async fn create_item(
         id: uuid::Uuid::new_v4().to_string(),
         name: payload.name,
         description: payload.description,
-        created_at: chrono::Utc::now().to_rfc3339(),
+        created_at: now_rfc3339(),
     };
 
     Ok(Json(item))
@@ -393,6 +402,44 @@ mod tests {
         assert_eq!(body["description"], "A test item");
         let id = body["id"].as_str().expect("id");
         assert!(uuid::Uuid::parse_str(id).is_ok(), "not a UUID: {id}");
+    }
+
+    #[tokio::test]
+    async fn created_at_is_rfc3339_utc_with_z_and_the_request_time() {
+        use time::{format_description::well_known::Rfc3339, OffsetDateTime, UtcOffset};
+
+        for (method, uri, json_body) in [
+            (Method::GET, "/api/v1/items/example", ""),
+            (Method::POST, "/api/v1/items", r#"{"name":"Widget"}"#),
+        ] {
+            let request = Request::builder()
+                .method(method.clone())
+                .uri(uri)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(json_body))
+                .unwrap();
+            let before = OffsetDateTime::now_utc();
+            let (status, body) = send(request).await;
+            let after = OffsetDateTime::now_utc();
+            assert_eq!(status, StatusCode::OK, "{method} {uri}");
+
+            let body = json(&body);
+            let created_at = body["created_at"].as_str().expect("created_at string");
+            let parsed = OffsetDateTime::parse(created_at, &Rfc3339)
+                .unwrap_or_else(|e| panic!("{method} {uri}: not RFC 3339: {created_at}: {e}"));
+            assert_eq!(parsed.offset(), UtcOffset::UTC, "{method} {uri}");
+            // Canonical form: `Z` for UTC (not `+00:00`), fraction without
+            // trailing zeros.
+            assert_eq!(
+                parsed.format(&Rfc3339).unwrap(),
+                created_at,
+                "{method} {uri}"
+            );
+            assert!(
+                before <= parsed && parsed <= after,
+                "{method} {uri}: {created_at} is not between {before} and {after}"
+            );
+        }
     }
 
     #[tokio::test]

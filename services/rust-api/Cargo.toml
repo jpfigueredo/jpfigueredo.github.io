@@ -33,11 +33,16 @@ anyhow = "1.0"
 thiserror = "1.0"
 
 # Utilities
-chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.6", features = ["v4", "serde"] }
+# RFC 3339 timestamps (created_at). Default features (std) plus formatting
+# only: no macros, no local-offset, no serde.
+time = { version = "0.3", features = ["formatting"] }
 
 [dev-dependencies]
 # Route tests drive the Router in-process with tower::ServiceExt::oneshot
 # (no socket, no network). Same tower major as axum 0.8 uses.
 tower = { version = "0.5", features = ["util"] }
+# The created_at test parses the timestamp back. `parsing` adds no crate, and
+# with resolver 2 it is enabled only when building tests.
+time = { version = "0.3", features = ["formatting", "parsing"] }
 

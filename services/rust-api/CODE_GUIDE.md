@@ -133,7 +133,7 @@ async fn create_item(Json(payload): Json<CreateItemRequest>) -> Result<Json<Item
         id: uuid::Uuid::new_v4().to_string(),
         name: payload.name,
         description: payload.description,
-        created_at: chrono::Utc::now().to_rfc3339(),
+        created_at: now_rfc3339(),
     };
     Ok(Json(item))
 }
@@ -142,7 +142,7 @@ async fn create_item(Json(payload): Json<CreateItemRequest>) -> Result<Json<Item
 **O que faz:**
 - `Json(payload)`: Extrai e deserializa o body JSON automaticamente
 - `uuid::Uuid::new_v4()`: Gera UUID v4 (como `crypto.randomUUID()`)
-- `chrono::Utc::now()`: Pega timestamp atual (como `new Date()`)
+- `now_rfc3339()`: timestamp atual em UTC, RFC 3339 com `Z` (crate `time`; como `new Date().toISOString()`)
 
 **Equivalente em Express.js:**
 ```javascript
